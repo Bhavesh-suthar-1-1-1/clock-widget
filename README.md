@@ -16,6 +16,8 @@ Android home-screen widget app with realistic watch dials. Pick a dial, put it o
 
 v2.2 fixed a frozen-clock bug: the widget now re-renders every minute through two independent paths (a minute alarm plus a foreground tick service), and opening the app repairs a stalled update chain. Needs unrestricted battery + exact alarms for the most reliable ticking.
 
+v2.3 added a soft frosted-glass look to the digital and hybrid widget backgrounds: each style keeps its own background colour at ~60% opacity, so the home-screen wallpaper faintly shows through, with a soft top light and a bright rim. Analog dials are unchanged.
+
 ## Build
 
 Open in Android Studio (minSdk 26, targetSdk 33, compileSdk 37) or build with Gradle. No network permissions, no accounts, no data leaves the phone.

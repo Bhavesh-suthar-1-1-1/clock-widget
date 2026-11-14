@@ -267,6 +267,60 @@ object DialRenderer {
         c.restore()
     }
 
+    // ---------- frosted-glass widget panel (digital + hybrid only) ----------
+
+    /**
+     * Glass base colour: a style's own background colour at ~60% opacity.
+     * The widget bitmap is drawn over the home-screen wallpaper, so the
+     * wallpaper faintly shows through — a frosted-glass look. Keeping each
+     * style's own colour (instead of forcing black) preserves its designed
+     * contrast: dark text stays on a light frosted panel, light text on dark.
+     */
+    fun glassColor(color: Int): Int = Color.argb(
+        (Color.alpha(color) * 0.60f).toInt().coerceIn(0, 255),
+        Color.red(color), Color.green(color), Color.blue(color)
+    )
+
+    /**
+     * Frosted finish drawn on top of the translucent panel, behind the dial
+     * content: faint speckle (seeded, so the pattern is identical on every
+     * re-render), a soft light falling from the top edge, and a thin bright
+     * rim just inside the panel edge.
+     */
+    fun drawGlassFinish(c: Canvas, rect: RectF, corner: Float, seed: Long) {
+        val rnd = java.util.Random(seed)
+        val dotW = Paint().apply { color = Color.argb(16, 255, 255, 255) }
+        val dotB = Paint().apply { color = Color.argb(14, 0, 0, 0) }
+        val n = (rect.width() * rect.height() / 900f).toInt().coerceIn(60, 320)
+        repeat(n) {
+            val x = rect.left + rnd.nextFloat() * rect.width()
+            val y = rect.top + rnd.nextFloat() * rect.height()
+            c.drawCircle(x, y, rect.width() * 0.0028f, if (rnd.nextBoolean()) dotW else dotB)
+        }
+        // Soft light from the top edge, fading down.
+        val topGlow = Paint().apply {
+            shader = LinearGradient(
+                rect.left, rect.top, rect.left, rect.top + rect.height() * 0.16f,
+                intArrayOf(Color.argb(44, 255, 255, 255), Color.argb(0, 255, 255, 255)),
+                floatArrayOf(0f, 1f), Shader.TileMode.CLAMP
+            )
+        }
+        c.drawRect(rect, topGlow)
+        // Thin bright rim just inside the panel edge.
+        val rimW = maxOf(rect.height() * 0.008f, 1.5f)
+        val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(70, 255, 255, 255)
+            style = Paint.Style.STROKE
+            strokeWidth = rimW
+        }
+        val inset = rimW / 2f
+        val r = maxOf(corner - inset, 0f)
+        c.drawRoundRect(
+            RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+            r, r, rim
+        )
+    }
+
     // ---------- glass over the whole watch: sheen across case + face ----------
 
     private fun drawCaseGlass(c: Canvas, dial: Dial, size: Int) {

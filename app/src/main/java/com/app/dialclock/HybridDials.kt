@@ -75,7 +75,7 @@ object HybridDials {
         c.clipPath(android.graphics.Path().apply {
             addRoundRect(rect, faceR * 0.30f, faceR * 0.30f, android.graphics.Path.Direction.CW)
         })
-        drawInto(c, rect, s, time, opts, size)
+        drawInto(c, rect, s, time, opts, size, faceR * 0.30f)
         c.restore()
     }
 
@@ -87,7 +87,7 @@ object HybridDials {
         c.clipPath(android.graphics.Path().apply {
             addRoundRect(rect, cornerFor(style, rect), cornerFor(style, rect), android.graphics.Path.Direction.CW)
         })
-        drawInto(c, rect, style, time, opts, min(w, h))
+        drawInto(c, rect, style, time, opts, min(w, h), cornerFor(style, rect))
         c.restore()
     }
 
@@ -98,18 +98,23 @@ object HybridDials {
     }
 
     // ---- core layout ------------------------------------------------------
-    private fun drawInto(c: Canvas, rect: RectF, s: HybridStyle, time: Calendar, opts: DialSettings, size: Int) {
-        // Background: solid or two-colour gradient.
+    private fun drawInto(c: Canvas, rect: RectF, s: HybridStyle, time: Calendar, opts: DialSettings, size: Int, corner: Float) {
+        // Background: the style's own colours at glass opacity, so the
+        // wallpaper faintly shows through the widget bitmap — frosted glass.
+        // The analog disc, digital time and date chip are drawn opaque on
+        // top, so they stay fully readable.
         if (s.bg2 != null) {
             c.drawRect(rect, Paint().apply {
                 shader = LinearGradient(
                     rect.left, rect.top, rect.right, rect.bottom,
-                    s.bg, s.bg2, Shader.TileMode.CLAMP
+                    DialRenderer.glassColor(s.bg), DialRenderer.glassColor(s.bg2), Shader.TileMode.CLAMP
                 )
             })
         } else {
-            c.drawRect(rect, Paint().apply { color = s.bg })
+            c.drawRect(rect, Paint().apply { color = DialRenderer.glassColor(s.bg) })
         }
+        // Frosted finish: faint speckle, top light, bright rim.
+        DialRenderer.drawGlassFinish(c, rect, corner, s.id.hashCode().toLong())
 
         val sec = time.get(Calendar.SECOND)
         // Pulse steps once per second: full alpha on even seconds, dim on odd.

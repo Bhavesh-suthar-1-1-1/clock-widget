@@ -167,7 +167,7 @@ object DigitalDials {
         c.clipPath(android.graphics.Path().apply {
             addRoundRect(rect, faceR * 0.30f, faceR * 0.30f, android.graphics.Path.Direction.CW)
         })
-        drawInto(c, rect, s, time, opts)
+        drawInto(c, rect, s, time, opts, faceR * 0.30f)
         c.restore()
     }
 
@@ -179,13 +179,13 @@ object DigitalDials {
         c.clipPath(android.graphics.Path().apply {
             addRoundRect(rect, min(w, h) * 0.12f, min(w, h) * 0.12f, android.graphics.Path.Direction.CW)
         })
-        drawInto(c, rect, style, time, opts)
+        drawInto(c, rect, style, time, opts, min(w, h) * 0.12f)
         c.restore()
     }
 
     // ---- core layout ------------------------------------------------------
-    private fun drawInto(c: Canvas, rect: RectF, s: DigitalStyle, time: Calendar, opts: DialSettings) {
-        drawBackground(c, rect, s)
+    private fun drawInto(c: Canvas, rect: RectF, s: DigitalStyle, time: Calendar, opts: DialSettings, corner: Float) {
+        drawBackground(c, rect, s, corner)
         val text = timeText(time, opts.hour24)
         val cx = rect.centerX()
         // Date line takes room below the time; shift the time up a little then.
@@ -205,17 +205,21 @@ object DigitalDials {
         }
     }
 
-    private fun drawBackground(c: Canvas, rect: RectF, s: DigitalStyle) {
+    // Frosted-glass background: the style's own colour at ~60% opacity, so
+    // the home-screen wallpaper faintly shows through the widget bitmap.
+    // The time text is drawn opaque on top, so it stays fully readable.
+    private fun drawBackground(c: Canvas, rect: RectF, s: DigitalStyle, corner: Float) {
+        val glass = DialRenderer.glassColor(s.bg)
         when (s.texture) {
-            Texture.SOLID -> c.drawRect(rect, Paint().apply { color = s.bg })
+            Texture.SOLID -> c.drawRect(rect, Paint().apply { color = glass })
             Texture.GRADIENT_BG -> c.drawRect(rect, Paint().apply {
                 shader = LinearGradient(
                     rect.left, rect.top, rect.left, rect.bottom,
-                    s.bg, shade(s.bg, 0.55f), Shader.TileMode.CLAMP
+                    glass, shade(glass, 0.55f), Shader.TileMode.CLAMP
                 )
             })
             Texture.GRAIN -> {
-                c.drawRect(rect, Paint().apply { color = s.bg })
+                c.drawRect(rect, Paint().apply { color = glass })
                 val rnd = java.util.Random(s.id.hashCode().toLong())
                 val dot = Paint().apply { color = Color.argb(26, 255, 255, 255) }
                 val dot2 = Paint().apply { color = Color.argb(20, 0, 0, 0) }
@@ -228,7 +232,7 @@ object DigitalDials {
                 }
             }
             Texture.FROSTED -> {
-                c.drawRect(rect, Paint().apply { color = s.bg })
+                c.drawRect(rect, Paint().apply { color = glass })
                 c.drawRect(rect, Paint().apply { color = Color.argb(70, 255, 255, 255) })
                 c.save()
                 c.rotate(-28f, rect.centerX(), rect.centerY())
@@ -246,7 +250,7 @@ object DigitalDials {
                 c.restore()
             }
             Texture.NEON -> {
-                c.drawRect(rect, Paint().apply { color = s.bg })
+                c.drawRect(rect, Paint().apply { color = glass })
                 val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = s.accent
                     style = Paint.Style.STROKE
@@ -260,6 +264,8 @@ object DigitalDials {
                 )
             }
         }
+        // Frosted finish: faint speckle, top light, bright rim.
+        DialRenderer.drawGlassFinish(c, rect, corner, s.id.hashCode().toLong())
     }
 
     // ---- time drawing -----------------------------------------------------
