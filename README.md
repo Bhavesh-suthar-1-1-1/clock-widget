@@ -1,4 +1,4 @@
-# Dial
+# Clock Widget
 
 Android home-screen widget app with realistic watch dials. Pick a dial, put it on your home screen — the widget ticks every minute, with a live second hand on analog dials.
 
