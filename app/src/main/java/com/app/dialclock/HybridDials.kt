@@ -64,10 +64,29 @@ object HybridDials {
 
     fun byId(id: String): HybridStyle? = STYLES.firstOrNull { it.id == id }
 
+    /** Custom overrides: palette accent / face / hands, resolved onto a
+     * copy so the built-in styles themselves never change. The text
+     * colours then go through the same contrast check as the digitals:
+     * the panel is translucent over the wallpaper, so the digital time
+     * must be readable on the panel the eye actually sees. A gradient
+     * background reads as the mean of its two stops. */
+    fun resolved(s: HybridStyle, opts: DialSettings): HybridStyle {
+        val bg = opts.faceColor ?: s.bg
+        val l1 = DialRenderer.luminance(bg)
+        val l2 = s.bg2?.let { DialRenderer.luminance(it) } ?: l1
+        val faceLum = (l1 + l2) / 2f
+        val alpha = DialRenderer.faceAlpha(opts)
+        return s.copy(
+            bg = bg,
+            fg = DialRenderer.readableTextOn(opts.handsColor ?: s.fg, faceLum, alpha, opts.backgroundLum),
+            accent = DialRenderer.readableTextOn(opts.accentColor ?: s.accent, faceLum, alpha, opts.backgroundLum)
+        )
+    }
+
     // ---- entry points ----------------------------------------------------
     /** Draw inside the square watch face (gallery previews + square widget). */
     fun draw(c: Canvas, dial: Dial, size: Int, faceR: Float, time: Calendar, opts: DialSettings) {
-        val s = byId(dial.style) ?: return
+        val s = byId(dial.style)?.let { resolved(it, opts) } ?: return
         val cx = size / 2f
         val cy = size / 2f
         val rect = RectF(cx - faceR, cy - faceR, cx + faceR, cy + faceR)
@@ -87,7 +106,7 @@ object HybridDials {
         c.clipPath(android.graphics.Path().apply {
             addRoundRect(rect, cornerFor(style, rect), cornerFor(style, rect), android.graphics.Path.Direction.CW)
         })
-        drawInto(c, rect, style, time, opts, min(w, h), cornerFor(style, rect))
+        drawInto(c, rect, resolved(style, opts), time, opts, min(w, h), cornerFor(style, rect))
         c.restore()
     }
 
@@ -101,17 +120,19 @@ object HybridDials {
     private fun drawInto(c: Canvas, rect: RectF, s: HybridStyle, time: Calendar, opts: DialSettings, size: Int, corner: Float) {
         // Background: the style's own colours at glass opacity, so the
         // wallpaper faintly shows through the widget bitmap — frosted glass.
-        // The analog disc, digital time and date chip are drawn opaque on
-        // top, so they stay fully readable.
+        // With Solid face on, the panel is fully opaque instead. The
+        // analog disc, digital time and date chip are drawn opaque on
+        // top, in contrast-checked colours, so they stay readable.
+        val alpha = DialRenderer.faceAlpha(opts)
         if (s.bg2 != null) {
             c.drawRect(rect, Paint().apply {
                 shader = LinearGradient(
                     rect.left, rect.top, rect.right, rect.bottom,
-                    DialRenderer.glassColor(s.bg), DialRenderer.glassColor(s.bg2), Shader.TileMode.CLAMP
+                    DialRenderer.glassColor(s.bg, alpha), DialRenderer.glassColor(s.bg2, alpha), Shader.TileMode.CLAMP
                 )
             })
         } else {
-            c.drawRect(rect, Paint().apply { color = DialRenderer.glassColor(s.bg) })
+            c.drawRect(rect, Paint().apply { color = DialRenderer.glassColor(s.bg, alpha) })
         }
         // Frosted finish: faint speckle, top light, bright rim.
         DialRenderer.drawGlassFinish(c, rect, corner, s.id.hashCode().toLong())
@@ -155,7 +176,7 @@ object HybridDials {
                 }
                 val dy = cy - rect.height() * 0.02f
                 c.drawText(digital, dzCx, dy - (dp.fontMetrics.ascent + dp.fontMetrics.descent) / 2f, dp)
-                drawDateChip(c, dzCx, dy + rect.height() * 0.20f, rect.height() * 0.12f, dayNum, dayName, s, pulseAlpha, (dzRight - dzLeft) * 0.96f)
+                if (opts.dateWindow) drawDateChip(c, dzCx, dy + rect.height() * 0.20f, rect.height() * 0.12f, dayNum, dayName, s, pulseAlpha, (dzRight - dzLeft) * 0.96f)
             }
             Layout.WIDE -> {
                 // Two zones that never touch: big digital left, mini analog right,
@@ -188,7 +209,7 @@ object HybridDials {
                 val ar = min((azRight - azLeft) / 2f, (analogBottom - analogTop) / 2f) * 0.96f * s.analogScale
                 val ay = (analogTop + analogBottom) / 2f
                 drawMiniAnalog(c, azCx, ay, ar, size, time, opts, s, pulseAlpha)
-                drawDateChip(c, azCx, chipCy, chipH, dayNum, dayName, s, pulseAlpha, (azRight - azLeft) * 0.98f)
+                if (opts.dateWindow) drawDateChip(c, azCx, chipCy, chipH, dayNum, dayName, s, pulseAlpha, (azRight - azLeft) * 0.98f)
             }
             Layout.TALL -> {
                 // Digital on top, mini analog in the middle, date chip at the bottom.
@@ -207,7 +228,7 @@ object HybridDials {
                 c.drawText(digital, rect.centerX(), dy - (dp.fontMetrics.ascent + dp.fontMetrics.descent) / 2f, dp)
                 val ar = min(rect.width(), rect.height()) * 0.17f * s.analogScale
                 drawMiniAnalog(c, rect.centerX(), rect.centerY() + rect.height() * 0.08f, ar, size, time, opts, s, pulseAlpha)
-                drawDateChip(c, rect.centerX(), rect.bottom - rect.height() * 0.10f, rect.height() * 0.075f, dayNum, dayName, s, pulseAlpha)
+                if (opts.dateWindow) drawDateChip(c, rect.centerX(), rect.bottom - rect.height() * 0.10f, rect.height() * 0.075f, dayNum, dayName, s, pulseAlpha)
             }
         }
     }
@@ -240,9 +261,12 @@ object HybridDials {
 
     /** Small analog face with hour/minute/second hands. */
     private fun drawMiniAnalog(c: Canvas, cx: Float, cy: Float, r: Float, size: Int, time: Calendar, opts: DialSettings, s: HybridStyle, pulseAlpha: Int) {
-        // Face: a slightly darker/lighter disc than the panel.
+        // Face: an opaque disc that contrasts with the hands. The disc
+        // follows the HANDS colour (which the contrast check may have
+        // flipped), not the designed background — otherwise a flipped
+        // hands colour could land invisible on its own disc.
         val face = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (Color.luminance(s.bg) > 0.5f) Color.argb(255, 235, 235, 235) else Color.argb(255, 22, 22, 26)
+            color = if (DialRenderer.luminance(s.fg) > 0.35f) Color.argb(255, 22, 22, 26) else Color.argb(255, 235, 235, 235)
         }
         c.drawCircle(cx, cy, r, face)
         // Pulsing accent ring (only on styles whose pulse target is the ring).

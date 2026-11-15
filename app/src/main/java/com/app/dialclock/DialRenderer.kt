@@ -14,6 +14,7 @@ import android.graphics.Typeface
 import java.util.Calendar
 import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 
 /** Draws every dial onto a Bitmap. One renderer is shared by the widget and the in-app previews. */
@@ -37,7 +38,7 @@ object DialRenderer {
      * as render(), so the hands land exactly on the face).
      */
     fun drawHandsOnto(bmp: Bitmap, dial: Dial, time: Calendar, opts: DialSettings = DialSettings()) {
-        val d = dial.withShape(opts.shape)
+        val d = dial.withShape(opts.shape).let { it.copy(face = opts.faceColor ?: it.face, hands = opts.handsColor ?: it.hands, accent = opts.accentColor ?: it.accent) }
         val size = bmp.width
         val mid = size / 2f
         val c = Canvas(bmp)
@@ -59,6 +60,73 @@ object DialRenderer {
     }
 
     /**
+     * Dials that move once per second: the live second hands, plus Slats —
+     * its number rings turn with the time (minute ring 6° per minute, so
+     * 0.1° per second), so a full re-render each second is the only way
+     * the rings visibly drift in real time — plus Hybrids, whose accent
+     * chip pulses and whose mini-analog face has a live second hand once
+     * per second (HybridDials.draw). The Studio preview already re-renders
+     * hybrids every second; leaving them out here meant the widget only
+     * ever updated once a minute while the preview ticked — the v2.8 bug.
+     * Plus digital styles when seconds are on: they draw a ":SS" suffix
+     * (DigitalDials.drawTime), so the widget must re-render every second
+     * to move it. Classic digitals (Seiko Gold, Big Digital, Wide) draw
+     * an opaque LCD with no seconds — they stay minute-only, same in
+     * preview and widget, so no lie there.
+     */
+    fun hasSecondMotion(dial: Dial, opts: DialSettings = DialSettings()): Boolean =
+        hasLiveHands(dial) || needsFullSecondRender(dial, opts)
+
+    /** Dials whose seconds cannot be drawn by the cached-face trick and
+     * need a full re-render every second: Slats (rings), Hybrids (pulse
+     * + mini-analog second hand), digital styles with seconds on (":SS"
+     * suffix). Analog kinds use the cached face + drawHandsOnto path. */
+    fun needsFullSecondRender(dial: Dial, opts: DialSettings = DialSettings()): Boolean =
+        dial.kind == DialKind.SLATS || dial.kind == DialKind.HYBRID ||
+        (dial.kind == DialKind.DIGITAL_STYLE && opts.secondHand)
+
+    /** Face alpha actually drawn: a solid face is fully opaque, so the
+     * preview colours ARE the widget colours on any wallpaper. */
+    fun faceAlpha(opts: DialSettings): Float = if (opts.solidFace) 1f else opts.glassOpacity
+
+    /** WCAG relative luminance of an sRGB colour, 0..1. */
+    fun luminance(color: Int): Float {
+        fun lin(c: Int): Float {
+            val v = c / 255f
+            return if (v <= 0.03928f) v / 12.92f else ((v + 0.055f) / 1.055f).pow(2.4f)
+        }
+        return 0.2126f * lin(Color.red(color)) + 0.7152f * lin(Color.green(color)) +
+            0.0722f * lin(Color.blue(color))
+    }
+
+    /** Contrast ratio between two luminances (WCAG), 1..21. */
+    fun contrastRatio(l1: Float, l2: Float): Float {
+        val (hi, lo) = if (l1 > l2) l1 to l2 else l2 to l1
+        return (hi + 0.05f) / (lo + 0.05f)
+    }
+
+    /**
+     * Text colour guaranteed readable on a translucent face. The face is
+     * drawn at [alpha] over a background of luminance [bgLum] (the
+     * wallpaper the widget sits on, as picked in the Studio — default
+     * dark), so the face the eye actually sees has luminance
+     * alpha*faceLum + (1-alpha)*bgLum. If the style's own [designed]
+     * text colour already contrasts >= 3:1 with that (large-text AA),
+     * it is kept — the style's look survives. Otherwise white or
+     * near-black is returned, whichever contrasts better. A saved
+     * colour override that would be invisible (black digits on a black
+     * face) can no longer happen, on any wallpaper.
+     */
+    fun readableTextOn(designed: Int, faceLum: Float, alpha: Float, bgLum: Float): Int {
+        val a = alpha.coerceIn(0f, 1f)
+        val seen = a * faceLum.coerceIn(0f, 1f) + (1f - a) * bgLum.coerceIn(0f, 1f)
+        if (contrastRatio(luminance(designed), seen) >= 3f) return designed
+        val white = 0xFFFFFFFF.toInt()
+        val black = 0xFF111111.toInt()
+        return if (contrastRatio(luminance(white), seen) >= contrastRatio(luminance(black), seen)) white else black
+    }
+
+    /**
      * Rectangular render for responsive widgets. Analog kinds draw the square
      * watch centred (never stretched); digital and hybrid kinds lay out
      * across the full rectangle. Long side is capped at 720px.
@@ -73,7 +141,7 @@ object DialRenderer {
     private fun renderRectInternal(dial: Dial, widthPx: Int, heightPx: Int, time: Calendar, opts: DialSettings, includeHands: Boolean): Bitmap {
         val w = widthPx.coerceAtLeast(120)
         val h = heightPx.coerceAtLeast(120)
-        val d = dial.withShape(opts.shape)
+        val d = dial.withShape(opts.shape).let { it.copy(face = opts.faceColor ?: it.face, hands = opts.handsColor ?: it.hands, accent = opts.accentColor ?: it.accent) }
         return when (d.kind) {
             DialKind.DIGITAL_STYLE -> {
                 val style = DigitalDials.byId(d.style) ?: return renderInternal(d, min(w, h), time, opts, includeHands)
@@ -99,7 +167,10 @@ object DialRenderer {
     }
 
     private fun renderInternal(dial: Dial, sizePx: Int, time: Calendar, opts: DialSettings, includeHands: Boolean): Bitmap {
-        val d = dial.withShape(opts.shape)
+        val d = dial.withShape(opts.shape).let { it.copy(face = opts.faceColor ?: it.face, hands = opts.handsColor ?: it.hands, accent = opts.accentColor ?: it.accent) }
+        // The slat wall clock is not a watch: no strap, case, grain or glass
+        // — it draws its own red rim, face, rings, slats and capsule window.
+        if (d.kind == DialKind.SLATS) return SlatsDial.render(sizePx, time, opts, d.accent)
         val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val mid = sizePx / 2f
@@ -128,6 +199,7 @@ object DialRenderer {
             DialKind.DUAL -> drawDual(c, d, sizePx, faceR, time)
             DialKind.DIGITAL_STYLE -> DigitalDials.draw(c, d, sizePx, faceR, time, opts)
             DialKind.HYBRID -> HybridDials.draw(c, d, sizePx, faceR, time, opts)
+            DialKind.SLATS -> {} // handled by the early return above
         }
         drawInnerShadow(c, d, sizePx, faceR)
         DialRealism.drawGrain(c, facePath(d, sizePx, faceR), sizePx)
@@ -276,8 +348,11 @@ object DialRenderer {
      * style's own colour (instead of forcing black) preserves its designed
      * contrast: dark text stays on a light frosted panel, light text on dark.
      */
-    fun glassColor(color: Int): Int = Color.argb(
-        (Color.alpha(color) * 0.60f).toInt().coerceIn(0, 255),
+    fun glassColor(color: Int): Int = glassColor(color, 0.6f)
+
+    /** Same frosted-glass alpha at a caller-chosen opacity (glass slider). */
+    fun glassColor(color: Int, opacity: Float): Int = Color.argb(
+        (Color.alpha(color) * opacity.coerceIn(0.05f, 1f)).toInt().coerceIn(0, 255),
         Color.red(color), Color.green(color), Color.blue(color)
     )
 

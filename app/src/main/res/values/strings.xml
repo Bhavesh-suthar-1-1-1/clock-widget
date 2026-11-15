@@ -1,8 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Dial</string>
-    <string name="device_widget">Dial · Device</string>
-    <string name="battery_widget">Dial · Battery</string>
-    <string name="calendar_widget">Dial · Calendar</string>
-    <string name="quicktools_widget">Dial · Quick Tools</string>
 </resources>

@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.widget.RemoteViews
 import java.util.Calendar
 import kotlin.math.min
@@ -62,6 +63,10 @@ class DialWidgetProvider : AppWidgetProvider() {
         } finally {
             TickScheduler.scheduleNextMinute(ctx)
             ensureTickService(ctx)
+            // Widget placed (or system-updated): re-read the real
+            // wallpaper so the text contrast matches it. Async, and the
+            // widget is only re-rendered if the luminance actually moved.
+            WallpaperSense.sampleAsync(ctx)
         }
     }
 
@@ -102,6 +107,7 @@ class DialWidgetProvider : AppWidgetProvider() {
     override fun onEnabled(ctx: Context) {
         TickScheduler.scheduleNextMinute(ctx)
         ensureTickService(ctx)
+        WallpaperSense.sampleAsync(ctx)
     }
 
     override fun onDisabled(ctx: Context) {
@@ -187,9 +193,6 @@ class DialWidgetProvider : AppWidgetProvider() {
             // The service re-renders every minute on its own, so the clock
             // no longer depends on the alarm chain alone.
             ensureTickService(ctx)
-            // Battery widget has no live broadcast of its own — refresh it
-            // here too, so its % stays fresh while the clock ticks.
-            BatteryWidgetProvider.refreshAll(ctx)
         }
 
         fun refreshAll(ctx: Context) {
@@ -215,7 +218,14 @@ class DialWidgetProvider : AppWidgetProvider() {
                     android.content.ComponentName(ctx, DialWidgetProvider::class.java)
                 )
                 if (ids.isNotEmpty()) SecondTickService.start(ctx)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                // Used to fail silently: on Android 12+ startForegroundService
+                // from a background receiver throws
+                // ForegroundServiceStartNotAllowedException (no exemption
+                // applies while battery optimization is on for this app),
+                // and the widget quietly fell back to minute updates.
+                // Log it so the failure is diagnosable instead of invisible.
+                Log.w("DialTick", "Could not start tick service", e)
             }
         }
     }

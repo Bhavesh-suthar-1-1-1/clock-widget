@@ -6,17 +6,31 @@ plugins {
 android {
     namespace = "com.app.dialclock"
     compileSdk = 37
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.app.dialclock"
         minSdk = 26
         targetSdk = 33
-        versionCode = 14
-        versionName = "2.3"
+        versionCode = 23
+        versionName = "3.2"
     }
 
     buildFeatures {
         compose = true
+    }
+
+    // Slats Vulkan preview: Atmo's one-pass engine + Slats JNI bridge.
+    externalNativeBuild {
+        ndkBuild {
+            path = file("src/main/cpp/Android.mk")
+        }
+    }
+
+    // SPIR-V shaders are read straight from the APK; keep them uncompressed
+    // like Atmo does.
+    androidResources {
+        noCompress += "spv"
     }
 
     compileOptions {

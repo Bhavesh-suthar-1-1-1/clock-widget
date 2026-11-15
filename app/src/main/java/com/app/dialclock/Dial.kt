@@ -3,7 +3,7 @@ package com.app.dialclock
 import android.content.Context
 import android.content.SharedPreferences
 
-enum class DialKind { ANALOG, DIGITAL, WORD_EN, WORD_ES, WIDE, BIG_DIGITAL, DAY, MOON, FRENCH_OVAL, BIG_HOUR, SEMPER, DUAL, DIGITAL_STYLE, HYBRID }
+enum class DialKind { ANALOG, DIGITAL, WORD_EN, WORD_ES, WIDE, BIG_DIGITAL, DAY, MOON, FRENCH_OVAL, BIG_HOUR, SEMPER, DUAL, DIGITAL_STYLE, HYBRID, SLATS }
 enum class Numerals { ARABIC, ROMAN, DOTS, FRENCH, KANJI, NONE }
 
 /** One watch dial. Colors are ARGB ints. dateAt: 3 or 6 o'clock, 0 = no date window. */
@@ -42,7 +42,10 @@ object Dials {
         Dial("dual", "Dual Time", DialKind.DUAL, 0xFF101010.toInt(), 0xFFD4AF37.toInt(), 0xFFD4AF37.toInt(), Numerals.NONE, 0, squircle = true),
         Dial("wide", "Wide", DialKind.WIDE, 0xFF101010.toInt(), 0xFFFFFFFF.toInt(), 0xFFE53935.toInt(), Numerals.NONE, 0, squircle = true),
         Dial("bigdigital", "Big Digital", DialKind.BIG_DIGITAL, 0xFF101010.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), Numerals.NONE, 0, squircle = true),
-        Dial("day", "Day", DialKind.DAY, 0xFF101010.toInt(), 0xFFFFFFFF.toInt(), 0xFFC9A86A.toInt(), Numerals.NONE, 0, squircle = true)
+        Dial("day", "Day", DialKind.DAY, 0xFF101010.toInt(), 0xFFFFFFFF.toInt(), 0xFFC9A86A.toInt(), Numerals.NONE, 0, squircle = true),
+        // Red slat wall clock: round, red rim, white face, rotating number rings
+        // behind vertical red slats, digital time in a capsule window.
+        Dial("slats", "Slats", DialKind.SLATS, 0xFFFFFFFF.toInt(), 0xFF111111.toInt(), 0xFFD32F2F.toInt(), Numerals.NONE, 0, squircle = false)
     ) + DigitalDials.STYLES.map { s ->
         Dial(s.id, s.name, DialKind.DIGITAL_STYLE, s.bg, s.fg, s.accent, Numerals.NONE, 0, squircle = true, style = s.id)
     } + HybridDials.STYLES.map { s ->
@@ -66,7 +69,24 @@ data class DialSettings(
     val minuteTrack: Boolean = true,
     val strap: Boolean = true,
     val shape: CaseShape = CaseShape.AUTO,
-    val responsive: Boolean = true
+    val responsive: Boolean = true,
+    // Custom overrides (null = keep the dial's own designed colours).
+    // Persisted in the same "dial_prefs" file; the widget
+    // provider reads them here, so Apply in Studio changes the real widget.
+    val faceColor: Int? = null,
+    val handsColor: Int? = null,
+    val accentColor: Int? = null,
+    val fontFamily: String? = null,
+    val glassOpacity: Float = 0.6f,
+    // Solid face: when on, the digital/hybrid face is drawn fully
+    // opaque, so the preview colours ARE the widget colours on any
+    // wallpaper. Off (default) keeps the frosted-glass look.
+    val solidFace: Boolean = false,
+    // Representative luminance (0..1) of the wallpaper the widget sits
+    // on, as picked in the Studio (default dark = his flower photo).
+    // The renderer blends the translucent face over this to decide the
+    // text colour — it is what makes preview and widget agree.
+    val backgroundLum: Float = 0.12f
 )
 
 object DialPrefs {
@@ -86,11 +106,21 @@ object DialPrefs {
     const val KEY_STRAP = "strap"
     private const val KEY_SHAPE = "case_shape"
     const val KEY_RESPONSIVE = "responsive"
-    const val KEY_DEVICE_DESIGN = "device_design"
-    const val KEY_BATTERY_DESIGN = "battery_design"
-    const val KEY_CALENDAR_DESIGN = "calendar_design"
     const val KEY_TORCH = "torch_on"
-    const val KEY_CAMERA_ASKED = "camera_asked"
+    private const val KEY_HIDDEN_UPDATE = "hidden_update"
+    // Custom overrides (Studio writes these keys).
+    // v3.2: stored as Long (ARGB in the low 32 bits, NONE_COLOR = no override).
+    // The old Int keys used -1 for "none", but -1 is also opaque white, so a
+    // white face/text colour picked in the Studio was silently dropped on Apply.
+    const val NONE_COLOR = -1L
+    const val KEY_STUDIO_FACE = "studio_face_v2"
+    const val KEY_STUDIO_HANDS = "studio_hands_v2"
+    const val KEY_STUDIO_ACCENT = "studio_accent_v2"
+    const val KEY_STUDIO_FONT = "studio_font"       // family string, "" = none
+    const val KEY_STUDIO_OPACITY = "studio_opacity" // Float 0.3..1.0
+    const val KEY_SOLID_FACE = "solid_face"         // Boolean
+    const val KEY_BG_LUM = "bg_lum"                 // Float 0..1, wallpaper luminance
+    const val KEY_WALLPAPER = "studio_wallpaper"    // StudioWallpaper name
 
     /** All render settings in one read, for the widget and the previews. */
     fun settings(ctx: Context): DialSettings {
@@ -106,32 +136,33 @@ object DialPrefs {
             strap = p.getBoolean(KEY_STRAP, true),
             shape = try { CaseShape.valueOf(p.getString(KEY_SHAPE, "AUTO") ?: "AUTO") }
                     catch (e: Exception) { CaseShape.AUTO },
-            responsive = p.getBoolean(KEY_RESPONSIVE, true)
+            responsive = p.getBoolean(KEY_RESPONSIVE, true),
+            faceColor = readColor(p, KEY_STUDIO_FACE),
+            handsColor = readColor(p, KEY_STUDIO_HANDS),
+            accentColor = readColor(p, KEY_STUDIO_ACCENT),
+            fontFamily = p.getString(KEY_STUDIO_FONT, "")?.takeIf { it.isNotEmpty() },
+            glassOpacity = p.getFloat(KEY_STUDIO_OPACITY, 0.6f).coerceIn(0.3f, 1f),
+            solidFace = p.getBoolean(KEY_SOLID_FACE, false),
+            backgroundLum = p.getFloat(KEY_BG_LUM, 0.12f).coerceIn(0f, 1f)
         )
     }
 
-    /** Design index picked in-app for the extra widgets (Device 0..3, Battery 0..2, Calendar 0..1). */
-    fun widgetDesign(ctx: Context, key: String, count: Int): Int =
-        prefs(ctx).getInt(key, 0).coerceIn(0, count - 1)
+    private fun readColor(p: SharedPreferences, key: String): Int? = try {
+        p.getLong(key, NONE_COLOR).takeIf { it != NONE_COLOR }?.toInt()
+    } catch (e: ClassCastException) { null }
 
-    fun cycleWidgetDesign(ctx: Context, key: String, count: Int): Int {
-        val next = (widgetDesign(ctx, key, count) + 1) % count
-        prefs(ctx).edit().putInt(key, next).apply()
-        return next
-    }
-
-    fun torchOn(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_TORCH, false)
-    fun setTorchOn(ctx: Context, on: Boolean) {
-        prefs(ctx).edit().putBoolean(KEY_TORCH, on).apply()
-    }
-
-    fun cameraAsked(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_CAMERA_ASKED, false)
-    fun setCameraAsked(ctx: Context) {
-        prefs(ctx).edit().putBoolean(KEY_CAMERA_ASKED, true).apply()
-    }
+    fun colorToStore(color: Int?): Long = color?.let { it.toLong() and 0xFFFFFFFFL } ?: NONE_COLOR
 
     fun setSetting(ctx: Context, key: String, value: Boolean) {
         prefs(ctx).edit().putBoolean(key, value).apply()
+    }
+
+    /** Version the user hid the update popup for — it must not re-show for that version. */
+    fun hiddenUpdateVersion(ctx: Context): String =
+        prefs(ctx).getString(KEY_HIDDEN_UPDATE, "") ?: ""
+
+    fun hideUpdate(ctx: Context, version: String) {
+        prefs(ctx).edit().putString(KEY_HIDDEN_UPDATE, version).apply()
     }
 
     fun setShape(ctx: Context, shape: CaseShape) {
@@ -155,6 +186,9 @@ object DialPrefs {
 
     fun uses(ctx: Context, id: String): Int = prefs(ctx).getInt(KEY_USES + id, 0)
 
+    fun favorites(ctx: Context): Set<String> =
+        prefs(ctx).getStringSet(KEY_FAVS, emptySet())?.toSet() ?: emptySet()
+
     fun isFav(ctx: Context, id: String): Boolean =
         prefs(ctx).getStringSet(KEY_FAVS, emptySet())?.contains(id) == true
 
@@ -165,7 +199,10 @@ object DialPrefs {
         p.edit().putStringSet(KEY_FAVS, set).apply()
     }
 
-    /** Custom dials stored as lines: id|name|kind|face|hands|accent|numerals|dateAt */
+    /** Custom dials stored as lines:
+     *  id|name|kind|face|hands|accent|numerals|dateAt|squircle|hours24|glow|aspect|style
+     *  Old 8-field lines (v2.7 and earlier) still parse — the five newer
+     *  fields default, so nothing saved before is lost. */
     fun customs(ctx: Context): List<Dial> {
         val raw = prefs(ctx).getString(KEY_CUSTOMS, "") ?: ""
         if (raw.isBlank()) return emptyList()
@@ -178,6 +215,11 @@ object DialPrefs {
                     kind = DialKind.valueOf(p[2]),
                     face = p[3].toInt(), hands = p[4].toInt(), accent = p[5].toInt(),
                     numerals = Numerals.valueOf(p[6]), dateAt = p[7].toInt(),
+                    squircle = p.getOrNull(8)?.toBooleanStrictOrNull() ?: false,
+                    hours24 = p.getOrNull(9)?.toBooleanStrictOrNull() ?: false,
+                    glow = p.getOrNull(10)?.toBooleanStrictOrNull() ?: false,
+                    aspect = p.getOrNull(11)?.toFloatOrNull() ?: 1f,
+                    style = p.getOrNull(12) ?: "",
                     custom = true
                 )
             } catch (e: Exception) {
@@ -186,21 +228,25 @@ object DialPrefs {
         }
     }
 
+    /** One custom dial as a 13-field line. `custom` is not stored — the
+     *  parser always sets it, since only customs come from this file. */
+    private fun Dial.toLine(): String = listOf(
+        id, name, kind.name, face.toString(), hands.toString(), accent.toString(),
+        numerals.name, dateAt.toString(), squircle.toString(), hours24.toString(),
+        glow.toString(), aspect.toString(), style
+    ).joinToString("|")
+
     fun addCustom(ctx: Context, d: Dial) {
         val list = customs(ctx).toMutableList()
         list.removeAll { it.id == d.id }
         list.add(d)
-        val raw = list.joinToString("\n") {
-            listOf(it.id, it.name, it.kind.name, it.face.toString(), it.hands.toString(), it.accent.toString(), it.numerals.name, it.dateAt.toString()).joinToString("|")
-        }
+        val raw = list.joinToString("\n") { it.toLine() }
         prefs(ctx).edit().putString(KEY_CUSTOMS, raw).apply()
     }
 
     fun deleteCustom(ctx: Context, id: String) {
         val list = customs(ctx).filter { it.id != id }
-        val raw = list.joinToString("\n") {
-            listOf(it.id, it.name, it.kind.name, it.face.toString(), it.hands.toString(), it.accent.toString(), it.numerals.name, it.dateAt.toString()).joinToString("|")
-        }
+        val raw = list.joinToString("\n") { it.toLine() }
         prefs(ctx).edit().putString(KEY_CUSTOMS, raw).apply()
         if (selectedId(ctx) == id) select(ctx, "french")
     }

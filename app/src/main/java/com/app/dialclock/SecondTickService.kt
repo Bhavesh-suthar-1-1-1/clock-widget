@@ -11,6 +11,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
@@ -22,7 +23,8 @@ import androidx.core.app.NotificationCompat
 import java.util.Calendar
 
 /**
- * SecondTickService — the live second hand on analog widgets.
+ * SecondTickService — the live second hand on analog widgets, and the
+ * live-turning rings on the Slats clock.
  *
  * A widget is a static picture; the only way its second hand can move is
  * for the app to re-draw it every second. Doing a FULL re-render every
@@ -51,6 +53,14 @@ class SecondTickService : Service() {
         private const val CHANNEL_ID = "dial_live_seconds"
         private const val NOTIF_ID = 2001
 
+        /** True while the service is alive. The Studio reads this to show
+         * whether the live second tick is actually running on the widget —
+         * a dead service used to fail silently, with the widget quietly
+         * falling back to minute updates. Set on the main thread in
+         * onCreate/onDestroy; read on the main thread from the UI. */
+        var isRunning: Boolean = false
+            private set
+
         fun start(ctx: Context) {
             val i = Intent(ctx, SecondTickService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i)
@@ -68,7 +78,7 @@ class SecondTickService : Service() {
             val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
             if (!pm.isIgnoringBatteryOptimizations(ctx.packageName)) return false
             val dial = Dials.byId(DialPrefs.selectedId(ctx), DialPrefs.customs(ctx)) ?: return false
-            return DialRenderer.hasLiveHands(dial)
+            return DialRenderer.hasSecondMotion(dial, settings)
         }
     }
 
@@ -113,6 +123,7 @@ class SecondTickService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createChannel()
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -125,13 +136,22 @@ class SecondTickService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIF_ID, notification())
+        // Android 14+ (API 34) requires the foreground-service type to be
+        // passed here as well as declared in the manifest. targetSdk is 33,
+        // so the untyped call is still legal today — this is hardening for
+        // the day the target moves to 34. Older devices keep the 2-arg call.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIF_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, notification())
+        }
         handler.removeCallbacks(tick)
         handler.post(tick)
         return START_STICKY
     }
 
     override fun onDestroy() {
+        isRunning = false
         handler.removeCallbacks(tick)
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         super.onDestroy()
@@ -186,6 +206,29 @@ class SecondTickService : Service() {
         for (id in ids) {
             val opts = mgr.getAppWidgetOptions(id)
             val (wPx, hPx) = DialWidgetProvider.widgetPx(this, opts, settings, density)
+            if (DialRenderer.needsFullSecondRender(dial, settings)) {
+                // Slats has no hands to draw on a cached face — the rings
+                // themselves rotate with the seconds, so the whole clock is
+                // re-rendered once per second (same size as the widget,
+                // a few milliseconds). Hybrids are the same: their motion
+                // is the once-a-second pulse and the mini-analog second
+                // hand, which drawHandsOnto cannot draw (it has no HYBRID
+                // branch), so they need the same full re-render. Digital
+                // styles with seconds on are the same again: the ":SS"
+                // suffix is part of the face, not a hand. Minute-tick
+                // fallback (not eligible) still re-renders via updateAll,
+                // so the rings move then.
+                val bmp = if (settings.responsive) {
+                    DialRenderer.renderRect(dial, wPx, hPx, time, settings)
+                } else {
+                    DialRenderer.render(dial, minOf(wPx, hPx), time, settings)
+                }
+                try {
+                    mgr.updateAppWidget(id, DialWidgetProvider.remoteViews(this, bmp))
+                } catch (_: Exception) {
+                }
+                continue
+            }
             val side = minOf(wPx, hPx)
             val key = "${dial.id}|${settings.hashCode()}|${side}x$minute"
             var face = faceCache[key]

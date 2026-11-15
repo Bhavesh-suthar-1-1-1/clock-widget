@@ -15,7 +15,7 @@ import java.util.Locale
 import kotlin.math.min
 
 /**
- * DigitalDials.kt — 38 original digital clock styles for the "Digital" section.
+ * DigitalDials.kt — 19 digital clock styles — 10 in the gallery, all 19 in the Studio.
  *
  * Every style is drawn here in code (system font families + Canvas effects).
  * Nothing is copied from any other widget app: the fonts are Android's own
@@ -23,7 +23,7 @@ import kotlin.math.min
  * below, which were made for this app.
  *
  * A style is: font family + weight + effect + colours + texture.
- * All 38 differ in that combination — no two are alike.
+ * All 19 differ in that combination — no two are alike.
  */
 object DigitalDials {
 
@@ -45,7 +45,11 @@ object DigitalDials {
         val bg: Int,
         val accent: Int,
         val texture: Texture = Texture.SOLID,
-        val showDate: Boolean = false
+        val showDate: Boolean = false,
+        /** v3.2: false = hidden from the main gallery. The design is still a
+         *  full dial — it stays in the Studio's Digital list, so it can be
+         *  picked there and applied to the widget. */
+        val featured: Boolean = true
     )
 
     // ---- colour helpers -------------------------------------------------
@@ -64,47 +68,52 @@ object DigitalDials {
     private const val CYAN = 0xFF00E5FF.toInt()
 
     val STYLES: List<DigitalStyle> = listOf(
-        DigitalStyle("dig01", "Tall", "sans-serif-condensed", bold = true, effect = Effect.FILL, fg = WHITE, bg = BLACK, accent = WHITE),
-        DigitalStyle("dig02", "Outline", "sans-serif-black", effect = Effect.OUTLINE, fg = WHITE, bg = BLACK, accent = WHITE),
         DigitalStyle("dig03", "Pixel", "monospace", bold = true, effect = Effect.PIXEL, fg = 0xFF39FF6A.toInt(), bg = BLACK, accent = 0xFF39FF6A.toInt()),
-        DigitalStyle("dig04", "Dotted", "monospace", bold = true, effect = Effect.DOTS, fg = WHITE, bg = BLACK, accent = CYAN),
+        DigitalStyle("dig04", "Dotted", "monospace", bold = true, effect = Effect.DOTS, fg = WHITE, bg = BLACK, accent = CYAN, featured = false),
         DigitalStyle("dig05", "Amber Seg", "monospace", effect = Effect.SEGMENT, fg = 0xFFFFB300.toInt(), bg = 0xFF2A1A08.toInt(), accent = 0xFFFFB300.toInt(), showDate = true),
-        DigitalStyle("dig06", "Striped", "sans-serif-black", effect = Effect.STRIPES, fg = WHITE, bg = BLACK, accent = WHITE),
+        DigitalStyle("dig06", "Striped", "sans-serif-black", effect = Effect.STRIPES, fg = WHITE, bg = BLACK, accent = WHITE, featured = false),
         DigitalStyle("dig07", "Script", "cursive", effect = Effect.FILL, fg = GOLD, bg = BLACK, accent = GOLD, showDate = true),
-        DigitalStyle("dig08", "Casual", "casual", effect = Effect.FILL, fg = 0xFFFF6B5E.toInt(), bg = 0xFFFFF3E0.toInt(), accent = 0xFFFF6B5E.toInt()),
         DigitalStyle("dig09", "Serif", "serif", bold = true, effect = Effect.FILL, fg = 0xFF1A2A6C.toInt(), bg = 0xFFF7F3E8.toInt(), accent = 0xFF1A2A6C.toInt(), showDate = true),
-        DigitalStyle("dig10", "Mono", "monospace", effect = Effect.FILL, fg = CYAN, bg = 0xFF0A1428.toInt(), accent = CYAN),
-        DigitalStyle("dig11", "Thin", "sans-serif-thin", effect = Effect.FILL, fg = 0xFFE8E8E8.toInt(), bg = BLACK, accent = 0xFFE8E8E8.toInt()),
         DigitalStyle("dig12", "Black", "sans-serif-black", effect = Effect.FILL, fg = WHITE, bg = BLACK, accent = WHITE, showDate = true),
         DigitalStyle("dig13", "Neon", "sans-serif", bold = true, effect = Effect.GLOW, fg = CYAN, bg = 0xFF050508.toInt(), accent = CYAN, texture = Texture.NEON),
         DigitalStyle("dig14", "Sunset", "sans-serif-black", effect = Effect.GRADIENT, fg = ORANGE, bg = BLACK, accent = 0xFFFF3D7F.toInt()),
-        DigitalStyle("dig15", "Ocean", "sans-serif", bold = true, effect = Effect.GRADIENT, fg = 0xFF4FC3F7.toInt(), bg = 0xFF06121F.toInt(), accent = 0xFF00E5FF.toInt(), showDate = true),
-        DigitalStyle("dig16", "Lemon", "sans-serif-black", effect = Effect.FILL, fg = 0xFFFFE135.toInt(), bg = CHARCOAL, accent = 0xFFFFE135.toInt()),
-        DigitalStyle("dig17", "Pink", "sans-serif-medium", effect = Effect.FILL, fg = 0xFFFF7BAC.toInt(), bg = 0xFF2A0A1E.toInt(), accent = 0xFFFF7BAC.toInt()),
-        DigitalStyle("dig18", "Earth", "serif", effect = Effect.FILL, fg = 0xFF6B4226.toInt(), bg = 0xFFF2EAD8.toInt(), accent = 0xFF6B4226.toInt(), texture = Texture.GRAIN, showDate = true),
-        DigitalStyle("dig19", "Pastel", "sans-serif-light", effect = Effect.FILL, fg = 0xFF5BA8A0.toInt(), bg = WHITE, accent = 0xFFB39DDB.toInt()),
-        DigitalStyle("dig20", "Gold", "serif", bold = true, effect = Effect.GRADIENT, fg = 0xFFFFE9A8.toInt(), bg = BLACK, accent = 0xFFB8860B.toInt(), showDate = true),
-        DigitalStyle("dig21", "Silver", "sans-serif", bold = true, effect = Effect.GRADIENT, fg = 0xFFF2F2F2.toInt(), bg = 0xFF1A1A1C.toInt(), accent = 0xFF9A9A9A.toInt()),
-        DigitalStyle("dig22", "Frost", "sans-serif-light", effect = Effect.FILL, fg = WHITE, bg = 0xFF3A4A5A.toInt(), accent = WHITE, texture = Texture.FROSTED),
-        DigitalStyle("dig23", "Grain", "monospace", bold = true, effect = Effect.FILL, fg = 0xFFF2EAD8.toInt(), bg = BLACK, accent = 0xFFF2EAD8.toInt(), texture = Texture.GRAIN),
+        DigitalStyle("dig15", "Ocean", "sans-serif", bold = true, effect = Effect.GRADIENT, fg = 0xFF4FC3F7.toInt(), bg = 0xFF06121F.toInt(), accent = 0xFF00E5FF.toInt(), showDate = true, featured = false),
+        DigitalStyle("dig16", "Lemon", "sans-serif-black", effect = Effect.FILL, fg = 0xFFFFE135.toInt(), bg = CHARCOAL, accent = 0xFFFFE135.toInt(), featured = false),
+        DigitalStyle("dig17", "Pink", "sans-serif-medium", effect = Effect.FILL, fg = 0xFFFF7BAC.toInt(), bg = 0xFF2A0A1E.toInt(), accent = 0xFFFF7BAC.toInt(), featured = false),
+        DigitalStyle("dig23", "Grain", "monospace", bold = true, effect = Effect.FILL, fg = 0xFFF2EAD8.toInt(), bg = BLACK, accent = 0xFFF2EAD8.toInt(), texture = Texture.GRAIN, featured = false),
         DigitalStyle("dig24", "Wavy", "casual", bold = true, effect = Effect.WAVY, fg = WHITE, bg = BLACK, accent = WHITE),
-        DigitalStyle("dig25", "Orbit", "sans-serif-condensed", bold = true, effect = Effect.GEOMETRIC, fg = WHITE, bg = BLACK, accent = ORANGE),
-        DigitalStyle("dig26", "Block", "monospace", bold = true, effect = Effect.BLOCK, fg = WHITE, bg = 0xFF101014.toInt(), accent = WHITE),
-        DigitalStyle("dig27", "Slashed", "sans-serif-condensed", italic = true, effect = Effect.FILL, fg = 0xFFE53935.toInt(), bg = BLACK, accent = 0xFFE53935.toInt(), showDate = true),
-        DigitalStyle("dig28", "Retro", "serif", italic = true, effect = Effect.FILL, fg = 0xFFF5E6C8.toInt(), bg = 0xFF0F4C4C.toInt(), accent = 0xFFF5E6C8.toInt()),
+        DigitalStyle("dig27", "Slashed", "sans-serif-condensed", italic = true, effect = Effect.FILL, fg = 0xFFE53935.toInt(), bg = BLACK, accent = 0xFFE53935.toInt(), showDate = true, featured = false),
         DigitalStyle("dig29", "Minimal", "sans-serif-thin", effect = Effect.FILL, fg = 0xFFBDBDBD.toInt(), bg = BLACK, accent = 0xFFBDBDBD.toInt(), showDate = true),
-        DigitalStyle("dig30", "Pop", "sans-serif-black", italic = true, effect = Effect.FILL, fg = WHITE, bg = 0xFFD32F2F.toInt(), accent = WHITE),
-        DigitalStyle("dig31", "Dot Ring", "monospace", effect = Effect.DOTS, fg = 0xFFB388FF.toInt(), bg = BLACK, accent = 0xFFB388FF.toInt(), showDate = true),
-        DigitalStyle("dig32", "Shadow", "sans-serif-black", effect = Effect.SHADOW, fg = WHITE, bg = 0xFF5E35B1.toInt(), accent = WHITE),
+        DigitalStyle("dig30", "Pop", "sans-serif-black", italic = true, effect = Effect.FILL, fg = WHITE, bg = 0xFFD32F2F.toInt(), accent = WHITE, featured = false),
         DigitalStyle("dig33", "Gold Line", "sans-serif-light", effect = Effect.OUTLINE, fg = GOLD, bg = BLACK, accent = GOLD, showDate = true),
-        DigitalStyle("dig34", "Two Tone", "sans-serif", bold = true, effect = Effect.DUAL_TONE, fg = WHITE, bg = BLACK, accent = ORANGE),
-        DigitalStyle("dig35", "Big Date", "sans-serif-black", effect = Effect.FILL, fg = WHITE, bg = BLACK, accent = WHITE, showDate = true),
-        DigitalStyle("dig36", "Lime", "sans-serif-condensed", bold = true, effect = Effect.FILL, fg = 0xFFBFFF00.toInt(), bg = BLACK, accent = 0xFFBFFF00.toInt()),
-        DigitalStyle("dig37", "Dusk", "sans-serif-medium", effect = Effect.FILL, fg = 0xFFD1C4E9.toInt(), bg = 0xFF1A1025.toInt(), accent = 0xFFD1C4E9.toInt(), texture = Texture.GRADIENT_BG),
-        DigitalStyle("dig38", "Rainbow", "sans-serif-black", effect = Effect.RAINBOW, fg = WHITE, bg = BLACK, accent = WHITE, showDate = true)
+        DigitalStyle("dig38", "Rainbow", "sans-serif-black", effect = Effect.RAINBOW, fg = WHITE, bg = BLACK, accent = WHITE, showDate = true, featured = false)
     )
 
     fun byId(id: String): DigitalStyle? = STYLES.firstOrNull { it.id == id }
+
+    /** Styles shown in the main gallery (the rest live in the Studio). */
+    val FEATURED_IDS: Set<String> = STYLES.filter { it.featured }.map { it.id }.toSet()
+
+    /** Custom overrides: palette accent / face / hands and the chosen
+     * numeral typeface, resolved onto a copy so the built-in styles
+     * themselves never change. The text colours are then run through
+     * the contrast check: the face is translucent over the wallpaper,
+     * so the text must be readable on the face the eye actually sees
+     * (face colour at its opacity, over the Studio's background
+     * luminance) — not just on the designed face. A style's own colours
+     * survive whenever they already contrast; a saved override that
+     * would be invisible is flipped to white or near-black instead. */
+    fun resolved(s: DigitalStyle, opts: DialSettings): DigitalStyle {
+        val bg = opts.faceColor ?: s.bg
+        val alpha = DialRenderer.faceAlpha(opts)
+        val faceLum = DialRenderer.luminance(bg)
+        return s.copy(
+            bg = bg,
+            fg = DialRenderer.readableTextOn(opts.handsColor ?: s.fg, faceLum, alpha, opts.backgroundLum),
+            accent = DialRenderer.readableTextOn(opts.accentColor ?: s.accent, faceLum, alpha, opts.backgroundLum),
+            family = opts.fontFamily ?: s.family
+        )
+    }
 
     // ---- time text ------------------------------------------------------
     private fun hourStr(time: Calendar, hour24: Boolean): String {
@@ -159,7 +168,7 @@ object DigitalDials {
     // ---- entry points ----------------------------------------------------
     /** Draw inside the square watch face (gallery previews + square widget). */
     fun draw(c: Canvas, dial: Dial, size: Int, faceR: Float, time: Calendar, opts: DialSettings) {
-        val s = byId(dial.style) ?: return
+        val s = byId(dial.style)?.let { resolved(it, opts) } ?: return
         val cx = size / 2f
         val cy = size / 2f
         val rect = RectF(cx - faceR, cy - faceR, cx + faceR, cy + faceR)
@@ -179,19 +188,21 @@ object DigitalDials {
         c.clipPath(android.graphics.Path().apply {
             addRoundRect(rect, min(w, h) * 0.12f, min(w, h) * 0.12f, android.graphics.Path.Direction.CW)
         })
-        drawInto(c, rect, style, time, opts, min(w, h) * 0.12f)
+        drawInto(c, rect, resolved(style, opts), time, opts, min(w, h) * 0.12f)
         c.restore()
     }
 
     // ---- core layout ------------------------------------------------------
     private fun drawInto(c: Canvas, rect: RectF, s: DigitalStyle, time: Calendar, opts: DialSettings, corner: Float) {
-        drawBackground(c, rect, s, corner)
+        drawBackground(c, rect, s, corner, opts)
         val text = timeText(time, opts.hour24)
         val cx = rect.centerX()
         // Date line takes room below the time; shift the time up a little then.
-        val cy = rect.centerY() - if (s.showDate) rect.height() * 0.055f else 0f
+        // The date only shows when the style draws one AND the user wants dates.
+        val showDate = s.showDate && opts.dateWindow
+        val cy = rect.centerY() - if (showDate) rect.height() * 0.055f else 0f
         drawTime(c, rect, cx, cy, text, s, time, opts)
-        if (s.showDate) {
+        if (showDate) {
             val date = SimpleDateFormat("EEE d MMM", Locale.ENGLISH)
                 .format(time.time).uppercase(Locale.ENGLISH)
             val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -207,9 +218,12 @@ object DigitalDials {
 
     // Frosted-glass background: the style's own colour at ~60% opacity, so
     // the home-screen wallpaper faintly shows through the widget bitmap.
-    // The time text is drawn opaque on top, so it stays fully readable.
-    private fun drawBackground(c: Canvas, rect: RectF, s: DigitalStyle, corner: Float) {
-        val glass = DialRenderer.glassColor(s.bg)
+    // With Solid face on, the face is fully opaque instead — the preview
+    // colours are then the widget colours on any wallpaper.
+    // The time text is drawn opaque on top, in a contrast-checked colour,
+    // so it stays readable on the face the eye actually sees.
+    private fun drawBackground(c: Canvas, rect: RectF, s: DigitalStyle, corner: Float, opts: DialSettings) {
+        val glass = DialRenderer.glassColor(s.bg, DialRenderer.faceAlpha(opts))
         when (s.texture) {
             Texture.SOLID -> c.drawRect(rect, Paint().apply { color = glass })
             Texture.GRADIENT_BG -> c.drawRect(rect, Paint().apply {
@@ -287,6 +301,27 @@ object DigitalDials {
                 drawCustomDigits(c, rect, cx, cy, text, s)
             else -> drawTextTime(c, rect, cx, cy, text, s, opts)
         }
+        // Small live seconds suffix (":SS") when the user wants a ticking
+        // digital. Drawn right after the time at ~40% size, in the same
+        // (contrast-checked) text colour — this is the visible tick on
+        // the widget, driven by the second-tick service. Skipped when
+        // there is no room for it.
+        var secondsW = 0f
+        if (opts.secondHand) {
+            val ss = ":%02d".format(time.get(Calendar.SECOND))
+            val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = s.fg
+                textSize = rect.height() * 0.16f
+                typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                textAlign = Paint.Align.LEFT
+            }
+            val tw = timeWidthEstimate(rect, text, s)
+            val sx = cx + tw / 2f + rect.width() * 0.02f
+            if (sx + sp.measureText(ss) < rect.right - rect.width() * 0.02f) {
+                c.drawText(ss, sx, baseline(sp, cy), sp)
+                secondsW = sp.measureText(ss) + rect.width() * 0.02f
+            }
+        }
         // Small AM / PM marker for 12-hour mode (drawn after the time, top-right).
         if (!opts.hour24) {
             val ampm = if (time.get(Calendar.HOUR_OF_DAY) < 12) "AM" else "PM"
@@ -297,7 +332,7 @@ object DigitalDials {
                 textAlign = Paint.Align.LEFT
             }
             val tw = timeWidthEstimate(rect, text, s)
-            val ax = cx + tw / 2f + rect.width() * 0.02f
+            val ax = cx + tw / 2f + rect.width() * 0.02f + secondsW
             if (ax + ap.measureText(ampm) < rect.right - rect.width() * 0.03f) {
                 c.drawText(ampm, ax, cy - rect.height() * 0.10f, ap)
             }
