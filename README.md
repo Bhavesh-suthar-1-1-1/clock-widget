@@ -2,6 +2,20 @@
 
 Android home-screen widget app with realistic watch dials. Pick a dial, put it on your home screen — the widget ticks every minute, with a live second hand on analog dials.
 
+## Screenshots
+
+<table>
+<tr>
+<td><img src="screenshots/home-screen-analog.jpg" width="270" alt="Analog dial on the home screen"></td>
+<td><img src="screenshots/home-screen-digital.jpg" width="270" alt="Big Hour digital dial on the home screen"></td>
+<td><img src="screenshots/gallery.jpg" width="270" alt="Dial gallery"></td>
+</tr>
+<tr>
+<td><img src="screenshots/studio.jpg" width="270" alt="Studio — Slats with live tick"></td>
+<td><img src="screenshots/app-home.jpg" width="270" alt="Dial home with featured Slats"></td>
+</tr>
+</table>
+
 ## What it has
 
 - **17 realistic watch dials** — each keeps its own case shape from its photo (round stays round, squircle stays squircle), all the same size
