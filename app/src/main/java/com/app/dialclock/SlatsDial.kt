@@ -25,7 +25,9 @@ import kotlin.math.sin
  * and rotate with the time, so the numbers are partly hidden by the slats
  * and drift as the minutes pass. A horizontal white capsule window at
  * centre-right, with a thin red rim, shows the current time in crisp black
- * digits ("HH MM") — that window is the readable time.
+ * digits ("HH:MM:SS") — the seconds are always shown, small, next to the
+ * minutes (v3.3), so the moving seconds ring's value is readable at a
+ * glance. That window is the readable time.
  *
  * Pure Canvas bitmap rendering, like every other dial: the widget bitmap is
  * re-rendered once per second when the live tick is eligible (unrestricted
@@ -43,7 +45,7 @@ object SlatsDial {
      * Both angles derive from wall-clock epoch seconds, so the widget
      * (re-rendered once a second) and the Vulkan preview (every frame)
      * stay in step. The rings are the moving spectacle — the capsule
-     * window always shows the real current HH MM.
+     * window always shows the real current HH:MM:SS.
      */
     fun spinAngles(timeMillis: Long): Pair<Float, Float> {
         val s = timeMillis / 1000.0
@@ -320,6 +322,10 @@ object SlatsDial {
         else { val v = time.get(Calendar.HOUR); if (v == 0) 12 else v }
         val hh = "%02d".format(hour)
         val mm = "%02d".format(time.get(Calendar.MINUTE))
+        // v3.3: the seconds are always shown in the capsule, small, next to
+        // the minutes — the moving ring's value, readable at a glance. They
+        // tick with the live second render, same as the rings.
+        val ss = "%02d".format(time.get(Calendar.SECOND))
 
         var ts = h * 0.60f
         val digitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -327,13 +333,24 @@ object SlatsDial {
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.LEFT
         }
-        digitPaint.textSize = ts
+        val secPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = INK
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.LEFT
+        }
         // Colon made of two accent dots, so it reads as a clock and never
         // as a gap; the whole group is shrunk to fit the capsule.
-        fun groupWidth(): Float = digitPaint.measureText(hh) + digitPaint.measureText(mm) + ts * 0.42f
+        fun layout() {
+            digitPaint.textSize = ts
+            secPaint.textSize = ts * 0.55f
+        }
+        fun groupWidth(): Float = digitPaint.measureText(hh) +
+            digitPaint.measureText(mm) + ts * 0.42f +
+            ts * 0.30f + secPaint.measureText(ss)
+        layout()
         while (groupWidth() > rect.width() * 0.80f && ts > h * 0.2f) {
             ts *= 0.92f
-            digitPaint.textSize = ts
+            layout()
         }
         val total = groupWidth()
         var x = rect.centerX() - total / 2f
@@ -346,6 +363,13 @@ object SlatsDial {
         c.drawCircle(x + ts * 0.21f, cy + ts * 0.15f, dotR, dotPaint)
         x += ts * 0.42f
         c.drawText(mm, x, baseY, digitPaint)
+        x += digitPaint.measureText(mm)
+        // Small seconds colon + seconds, on the same baseline as HH MM.
+        val secDotR = ts * 0.036f
+        c.drawCircle(x + ts * 0.15f, cy - ts * 0.082f, secDotR, dotPaint)
+        c.drawCircle(x + ts * 0.15f, cy + ts * 0.082f, secDotR, dotPaint)
+        x += ts * 0.30f
+        c.drawText(ss, x, baseY, secPaint)
 
         // 12-hour mode: a small AM / PM tag above the right end of the digits.
         if (!opts.hour24) {

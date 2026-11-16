@@ -39,4 +39,6 @@ v2.4 cut the Digital section from 38 dials to the 19 most distinct ones, removed
 
 Open in Android Studio (minSdk 26, targetSdk 33, compileSdk 37) or build with Gradle. Internet is used only to check GitHub releases for app updates; no accounts, no data leaves the phone otherwise.
 
+v3.3 — the Slats capsule now always shows the seconds, small, next to the minutes (05:40:23), ticking every second with the live tick.
+
 v3.2 — fixes: a White colour picked in the Studio was ignored on Apply (white is -1, the old "none" marker); the Slats minute ring showed 00 instead of 60; wallpaper detection failed on phones that return hardware bitmaps; the Studio preview could crash while swapping frames; system Back now returns to the gallery. New: a redesigned app (bottom navigation, gallery filters, tabbed Studio), nicer Slats with Studio colour control, and half of the digital designs moved into the Studio.
