@@ -67,26 +67,11 @@ object DigitalDials {
     private const val ORANGE = 0xFFFF7A00.toInt()
     private const val CYAN = 0xFF00E5FF.toInt()
 
+    // v3.8: only one digital clock is kept — "Black" (dig12). The other
+    // 18 styles were removed at Bhavesh's word ("remove all digital clocks
+    // but keep 1 digital clock"). The Studio customises this one instead.
     val STYLES: List<DigitalStyle> = listOf(
-        DigitalStyle("dig03", "Pixel", "monospace", bold = true, effect = Effect.PIXEL, fg = 0xFF39FF6A.toInt(), bg = BLACK, accent = 0xFF39FF6A.toInt()),
-        DigitalStyle("dig04", "Dotted", "monospace", bold = true, effect = Effect.DOTS, fg = WHITE, bg = BLACK, accent = CYAN, featured = false),
-        DigitalStyle("dig05", "Amber Seg", "monospace", effect = Effect.SEGMENT, fg = 0xFFFFB300.toInt(), bg = 0xFF2A1A08.toInt(), accent = 0xFFFFB300.toInt(), showDate = true),
-        DigitalStyle("dig06", "Striped", "sans-serif-black", effect = Effect.STRIPES, fg = WHITE, bg = BLACK, accent = WHITE, featured = false),
-        DigitalStyle("dig07", "Script", "cursive", effect = Effect.FILL, fg = GOLD, bg = BLACK, accent = GOLD, showDate = true),
-        DigitalStyle("dig09", "Serif", "serif", bold = true, effect = Effect.FILL, fg = 0xFF1A2A6C.toInt(), bg = 0xFFF7F3E8.toInt(), accent = 0xFF1A2A6C.toInt(), showDate = true),
-        DigitalStyle("dig12", "Black", "sans-serif-black", effect = Effect.FILL, fg = WHITE, bg = BLACK, accent = WHITE, showDate = true),
-        DigitalStyle("dig13", "Neon", "sans-serif", bold = true, effect = Effect.GLOW, fg = CYAN, bg = 0xFF050508.toInt(), accent = CYAN, texture = Texture.NEON),
-        DigitalStyle("dig14", "Sunset", "sans-serif-black", effect = Effect.GRADIENT, fg = ORANGE, bg = BLACK, accent = 0xFFFF3D7F.toInt()),
-        DigitalStyle("dig15", "Ocean", "sans-serif", bold = true, effect = Effect.GRADIENT, fg = 0xFF4FC3F7.toInt(), bg = 0xFF06121F.toInt(), accent = 0xFF00E5FF.toInt(), showDate = true, featured = false),
-        DigitalStyle("dig16", "Lemon", "sans-serif-black", effect = Effect.FILL, fg = 0xFFFFE135.toInt(), bg = CHARCOAL, accent = 0xFFFFE135.toInt(), featured = false),
-        DigitalStyle("dig17", "Pink", "sans-serif-medium", effect = Effect.FILL, fg = 0xFFFF7BAC.toInt(), bg = 0xFF2A0A1E.toInt(), accent = 0xFFFF7BAC.toInt(), featured = false),
-        DigitalStyle("dig23", "Grain", "monospace", bold = true, effect = Effect.FILL, fg = 0xFFF2EAD8.toInt(), bg = BLACK, accent = 0xFFF2EAD8.toInt(), texture = Texture.GRAIN, featured = false),
-        DigitalStyle("dig24", "Wavy", "casual", bold = true, effect = Effect.WAVY, fg = WHITE, bg = BLACK, accent = WHITE),
-        DigitalStyle("dig27", "Slashed", "sans-serif-condensed", italic = true, effect = Effect.FILL, fg = 0xFFE53935.toInt(), bg = BLACK, accent = 0xFFE53935.toInt(), showDate = true, featured = false),
-        DigitalStyle("dig29", "Minimal", "sans-serif-thin", effect = Effect.FILL, fg = 0xFFBDBDBD.toInt(), bg = BLACK, accent = 0xFFBDBDBD.toInt(), showDate = true),
-        DigitalStyle("dig30", "Pop", "sans-serif-black", italic = true, effect = Effect.FILL, fg = WHITE, bg = 0xFFD32F2F.toInt(), accent = WHITE, featured = false),
-        DigitalStyle("dig33", "Gold Line", "sans-serif-light", effect = Effect.OUTLINE, fg = GOLD, bg = BLACK, accent = GOLD, showDate = true),
-        DigitalStyle("dig38", "Rainbow", "sans-serif-black", effect = Effect.RAINBOW, fg = WHITE, bg = BLACK, accent = WHITE, showDate = true, featured = false)
+        DigitalStyle("dig12", "Black", "sans-serif-black", effect = Effect.FILL, fg = WHITE, bg = BLACK, accent = WHITE, showDate = true)
     )
 
     fun byId(id: String): DigitalStyle? = STYLES.firstOrNull { it.id == id }
@@ -122,18 +107,14 @@ object DigitalDials {
         return "%02d".format(h)
     }
 
-    private fun timeText(time: Calendar, hour24: Boolean): String =
-        "${hourStr(time, hour24)}:%02d".format(time.get(Calendar.MINUTE))
+    private fun timeText(time: Calendar, hour24: Boolean, showColon: Boolean = true): String =
+        "${hourStr(time, hour24)}${if (showColon) ":" else " "}%02d".format(time.get(Calendar.MINUTE))
 
-    private fun typefaceOf(s: DigitalStyle): Typeface {
-        val base = Typeface.create(s.family, Typeface.NORMAL)
-        val style = when {
-            s.bold && s.italic -> Typeface.BOLD_ITALIC
-            s.bold -> Typeface.BOLD
-            s.italic -> Typeface.ITALIC
-            else -> Typeface.NORMAL
-        }
-        return Typeface.create(base, style)
+    /** The style's typeface at the Studio weight. No weight picked yet =
+     * the style's own weight (bold styles stay bold, light ones stay light). */
+    private fun typefaceOf(s: DigitalStyle, opts: DialSettings): Typeface {
+        val weight = opts.fontWeight ?: if (s.bold) 0.8f else 0.45f
+        return DialRenderer.weightedTypeface(s.family, weight, s.italic)
     }
 
     // ---- 5x7 pixel font (digits only; ':' is two dots) -------------------
@@ -195,7 +176,7 @@ object DigitalDials {
     // ---- core layout ------------------------------------------------------
     private fun drawInto(c: Canvas, rect: RectF, s: DigitalStyle, time: Calendar, opts: DialSettings, corner: Float) {
         drawBackground(c, rect, s, corner, opts)
-        val text = timeText(time, opts.hour24)
+        val text = timeText(time, opts.hour24, opts.showColon)
         val cx = rect.centerX()
         // Date line takes room below the time; shift the time up a little then.
         // The date only shows when the style draws one AND the user wants dates.
@@ -283,11 +264,11 @@ object DigitalDials {
     }
 
     // ---- time drawing -----------------------------------------------------
-    private fun basePaint(s: DigitalStyle, textSize: Float): Paint =
+    private fun basePaint(s: DigitalStyle, textSize: Float, opts: DialSettings): Paint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = s.fg
             this.textSize = textSize
-            typeface = typefaceOf(s)
+            typeface = typefaceOf(s, opts)
             textAlign = Paint.Align.CENTER
         }
 
@@ -296,9 +277,13 @@ object DigitalDials {
         cy - (p.fontMetrics.ascent + p.fontMetrics.descent) / 2f
 
     private fun drawTime(c: Canvas, rect: RectF, cx: Float, cy: Float, text: String, s: DigitalStyle, time: Calendar, opts: DialSettings) {
-        when (s.effect) {
-            Effect.PIXEL, Effect.DOTS, Effect.SEGMENT, Effect.BLOCK ->
+        // Stacked layout returns where the minutes line sits, so the
+        // seconds suffix and AM/PM can hang off it instead of the centre.
+        val stackedInfo: StackedInfo? = when (s.effect) {
+            Effect.PIXEL, Effect.DOTS, Effect.SEGMENT, Effect.BLOCK -> {
                 drawCustomDigits(c, rect, cx, cy, text, s)
+                null
+            }
             else -> drawTextTime(c, rect, cx, cy, text, s, opts)
         }
         // Small live seconds suffix (":SS") when the user wants a ticking
@@ -315,11 +300,19 @@ object DigitalDials {
                 typeface = Typeface.create("sans-serif", Typeface.BOLD)
                 textAlign = Paint.Align.LEFT
             }
-            val tw = timeWidthEstimate(rect, text, s)
-            val sx = cx + tw / 2f + rect.width() * 0.02f
-            if (sx + sp.measureText(ss) < rect.right - rect.width() * 0.02f) {
-                c.drawText(ss, sx, baseline(sp, cy), sp)
-                secondsW = sp.measureText(ss) + rect.width() * 0.02f
+            if (stackedInfo != null) {
+                val sx = cx + stackedInfo.mmWidth / 2f + rect.width() * 0.02f
+                if (sx + sp.measureText(ss) < rect.right - rect.width() * 0.02f) {
+                    c.drawText(ss, sx, stackedInfo.mmBaseline, sp)
+                    secondsW = sp.measureText(ss) + rect.width() * 0.02f
+                }
+            } else {
+                val tw = timeWidthEstimate(rect, text, s, opts)
+                val sx = cx + tw / 2f + rect.width() * 0.02f
+                if (sx + sp.measureText(ss) < rect.right - rect.width() * 0.02f) {
+                    c.drawText(ss, sx, baseline(sp, cy), sp)
+                    secondsW = sp.measureText(ss) + rect.width() * 0.02f
+                }
             }
         }
         // Small AM / PM marker for 12-hour mode (drawn after the time, top-right).
@@ -331,16 +324,23 @@ object DigitalDials {
                 typeface = Typeface.create("sans-serif", Typeface.BOLD)
                 textAlign = Paint.Align.LEFT
             }
-            val tw = timeWidthEstimate(rect, text, s)
-            val ax = cx + tw / 2f + rect.width() * 0.02f + secondsW
-            if (ax + ap.measureText(ampm) < rect.right - rect.width() * 0.03f) {
-                c.drawText(ampm, ax, cy - rect.height() * 0.10f, ap)
+            if (stackedInfo != null) {
+                val ax = cx + stackedInfo.mmWidth / 2f + rect.width() * 0.02f + secondsW
+                if (ax + ap.measureText(ampm) < rect.right - rect.width() * 0.03f) {
+                    c.drawText(ampm, ax, stackedInfo.mmBaseline, ap)
+                }
+            } else {
+                val tw = timeWidthEstimate(rect, text, s, opts)
+                val ax = cx + tw / 2f + rect.width() * 0.02f + secondsW
+                if (ax + ap.measureText(ampm) < rect.right - rect.width() * 0.03f) {
+                    c.drawText(ampm, ax, cy - rect.height() * 0.10f, ap)
+                }
             }
         }
     }
 
     /** Rough width of the drawn time, used to place the AM/PM marker. */
-    private fun timeWidthEstimate(rect: RectF, text: String, s: DigitalStyle): Float {
+    private fun timeWidthEstimate(rect: RectF, text: String, s: DigitalStyle, opts: DialSettings): Float {
         return when (s.effect) {
             Effect.PIXEL, Effect.DOTS, Effect.SEGMENT, Effect.BLOCK -> {
                 val cellH = rect.height() * 0.52f
@@ -349,21 +349,52 @@ object DigitalDials {
                 cellW * 4 + cellW * 0.5f + gap * 4
             }
             else -> {
-                val p = basePaint(s, rect.height() * 0.40f)
+                val p = basePaint(s, rect.height() * 0.40f, opts)
                 p.measureText(text)
             }
         }
     }
 
-    private fun drawTextTime(c: Canvas, rect: RectF, cx: Float, cy: Float, text: String, s: DigitalStyle, opts: DialSettings) {
+    /** Where the minutes line sits in a stacked layout — the seconds
+     * suffix and AM/PM hang off it. */
+    private data class StackedInfo(val mmWidth: Float, val mmBaseline: Float)
+
+    /** Hours over minutes, like the stacked clock in the reference
+     * screenshots. Plain lines — the fancy per-effect paths are one-row
+     * only, and the kept style (Black, FILL) draws plain anyway. */
+    private fun drawStackedTime(c: Canvas, rect: RectF, cx: Float, cy: Float, text: String, s: DigitalStyle, opts: DialSettings): StackedInfo {
+        val parts = text.split(':', ' ').filter { it.isNotEmpty() }
+        val hh = parts.getOrElse(0) { "--" }
+        val mm = parts.getOrElse(1) { "--" }
+        var ts = rect.height() * 0.30f * opts.digitalScale
+        val maxW = rect.width() * 0.80f
+        var p = basePaint(s, ts, opts)
+        applyEffect(p, s, ts, rect)
+        while (maxOf(p.measureText(hh), p.measureText(mm)) > maxW && ts > rect.height() * 0.10f) {
+            ts *= 0.92f
+            p = basePaint(s, ts, opts)
+            applyEffect(p, s, ts, rect)
+        }
+        val lineH = ts * 1.08f
+        val hhCy = cy - lineH / 2f
+        val mmCy = cy + lineH / 2f
+        c.drawText(hh, cx, baseline(p, hhCy), p)
+        c.drawText(mm, cx, baseline(p, mmCy), p)
+        return StackedInfo(p.measureText(mm), baseline(p, mmCy))
+    }
+
+    private fun drawTextTime(c: Canvas, rect: RectF, cx: Float, cy: Float, text: String, s: DigitalStyle, opts: DialSettings): StackedInfo? {
+        if (opts.digitalLayout == DigitalLayout.STACKED) {
+            return drawStackedTime(c, rect, cx, cy, text, s, opts)
+        }
         // Shrink until the whole time fits the face width (never clip).
-        var ts = rect.height() * 0.42f
+        var ts = rect.height() * 0.42f * opts.digitalScale
         val maxW = rect.width() * 0.88f
-        var p = basePaint(s, ts)
+        var p = basePaint(s, ts, opts)
         applyEffect(p, s, ts, rect)
         while (p.measureText(text) > maxW && ts > rect.height() * 0.10f) {
             ts *= 0.92f
-            p = basePaint(s, ts)
+            p = basePaint(s, ts, opts)
             applyEffect(p, s, ts, rect)
         }
         when (s.effect) {
@@ -433,6 +464,7 @@ object DigitalDials {
             }
             else -> c.drawText(text, cx, baseline(p, cy), p)
         }
+        return null
     }
 
     /** Per-effect paint setup (outline / glow / gradient / stripes). */

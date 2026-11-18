@@ -52,14 +52,12 @@ object HybridDials {
     private const val BLACK = 0xFF000000.toInt()
     private const val WHITE = 0xFFFFFFFF.toInt()
 
+    // v3.8: only one hybrid clock is kept — "Hybrid Square" (hyb01). The
+    // other 6 styles were removed at Bhavesh's word ("remove all hybrid
+    // clocks but keep one hybrid clock"). The Studio customises this one
+    // instead: its layout, sizes, font and colours are all changeable.
     val STYLES: List<HybridStyle> = listOf(
-        HybridStyle("hyb01", "Hybrid Square", Layout.SQUARE, Shape.SQUIRCLE, bg = BLACK, fg = WHITE, accent = 0xFFE53935.toInt(), pulse = Pulse.CHIP, analogScale = 1f, digitalScale = 1f),
-        HybridStyle("hyb02", "Hybrid Wide", Layout.WIDE, Shape.WIDE_RECT, bg = BLACK, fg = WHITE, accent = 0xFFE53935.toInt(), pulse = Pulse.DOT, analogScale = 0.9f, digitalScale = 1.1f),
-        HybridStyle("hyb03", "Hybrid Tall", Layout.TALL, Shape.SQUIRCLE, bg = WHITE, fg = 0xFF111111.toInt(), accent = 0xFF1E88E5.toInt(), pulse = Pulse.CHIP, analogScale = 1.1f, digitalScale = 0.95f),
-        HybridStyle("hyb04", "Hybrid Gold", Layout.SQUARE, Shape.ROUND, bg = BLACK, fg = 0xFFD4AF37.toInt(), accent = 0xFFD4AF37.toInt(), pulse = Pulse.RING, analogScale = 1f, digitalScale = 1f),
-        HybridStyle("hyb05", "Hybrid Blue", Layout.WIDE, Shape.WIDE_RECT, bg = 0xFF0A1E3C.toInt(), fg = WHITE, accent = 0xFF00E5FF.toInt(), pulse = Pulse.CHIP, analogScale = 0.85f, digitalScale = 1.05f),
-        HybridStyle("hyb06", "Hybrid Mono", Layout.SQUARE, Shape.SQUIRCLE, bg = WHITE, fg = BLACK, accent = BLACK, pulse = Pulse.DOT, analogScale = 0.8f, digitalScale = 1.1f),
-        HybridStyle("hyb07", "Hybrid Sunset", Layout.WIDE, Shape.ROUND, bg = 0xFFFF7A00.toInt(), bg2 = 0xFFFF3D7F.toInt(), fg = WHITE, accent = WHITE, pulse = Pulse.CHIP, analogScale = 0.95f, digitalScale = 1f)
+        HybridStyle("hyb01", "Hybrid Square", Layout.SQUARE, Shape.SQUIRCLE, bg = BLACK, fg = WHITE, accent = 0xFFE53935.toInt(), pulse = Pulse.CHIP, analogScale = 1f, digitalScale = 1f)
     )
 
     fun byId(id: String): HybridStyle? = STYLES.firstOrNull { it.id == id }
@@ -76,11 +74,27 @@ object HybridDials {
         val l2 = s.bg2?.let { DialRenderer.luminance(it) } ?: l1
         val faceLum = (l1 + l2) / 2f
         val alpha = DialRenderer.faceAlpha(opts)
+        // v3.8: the Studio can rearrange this one hybrid (its layout is
+        // the "position" + "look") and resize the two zones.
+        val layout = opts.hybridLayout?.let { name ->
+            try { Layout.valueOf(name) } catch (e: Exception) { s.layout }
+        } ?: s.layout
         return s.copy(
             bg = bg,
             fg = DialRenderer.readableTextOn(opts.handsColor ?: s.fg, faceLum, alpha, opts.backgroundLum),
-            accent = DialRenderer.readableTextOn(opts.accentColor ?: s.accent, faceLum, alpha, opts.backgroundLum)
+            accent = DialRenderer.readableTextOn(opts.accentColor ?: s.accent, faceLum, alpha, opts.backgroundLum),
+            layout = layout,
+            analogScale = (s.analogScale * opts.hybridAnalogScale).coerceIn(0.5f, 1.6f),
+            digitalScale = (s.digitalScale * opts.hybridDigitalScale).coerceIn(0.5f, 1.6f)
         )
+    }
+
+    /** The digital time's typeface: the Studio font at the Studio weight
+     * (bold by design when nothing is picked). */
+    private fun digitalTypeface(opts: DialSettings): Typeface {
+        val family = opts.fontFamily ?: "sans-serif"
+        val weight = opts.fontWeight ?: 0.8f
+        return DialRenderer.weightedTypeface(family, weight, false)
     }
 
     // ---- entry points ----------------------------------------------------
@@ -166,7 +180,7 @@ object HybridDials {
                 val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = s.fg
                     textSize = rect.height() * 0.22f * s.digitalScale
-                    typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                    typeface = digitalTypeface(opts)
                     textAlign = Paint.Align.CENTER
                 }
                 var ts = rect.height() * 0.22f * s.digitalScale
@@ -191,7 +205,7 @@ object HybridDials {
                 val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = s.fg
                     textSize = rect.height() * 0.40f * s.digitalScale
-                    typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                    typeface = digitalTypeface(opts)
                     textAlign = Paint.Align.CENTER
                 }
                 var ts = rect.height() * 0.40f * s.digitalScale
@@ -216,7 +230,7 @@ object HybridDials {
                 val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = s.fg
                     textSize = rect.width() * 0.34f * s.digitalScale
-                    typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                    typeface = digitalTypeface(opts)
                     textAlign = Paint.Align.CENTER
                 }
                 var ts = rect.width() * 0.34f * s.digitalScale

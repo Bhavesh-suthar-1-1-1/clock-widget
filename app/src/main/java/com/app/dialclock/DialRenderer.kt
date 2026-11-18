@@ -11,6 +11,7 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.os.Build
 import java.util.Calendar
 import kotlin.math.cos
 import kotlin.math.min
@@ -19,6 +20,14 @@ import kotlin.math.sin
 
 /** Draws every dial onto a Bitmap. One renderer is shared by the widget and the in-app previews. */
 object DialRenderer {
+
+    /**
+     * v3.5: slimmer body on every dial — the face grew (0.385 -> 0.405) and
+     * the case shrank (0.455 -> 0.44), so the bezel band is now 0.035
+     * instead of 0.07. Every site that used the old fractions reads these.
+     */
+    private const val FACE_R_FRAC = 0.405f
+    private const val CASE_R_FRAC = 0.44f
 
     /** Full render, hands included — what the widget and the previews use. */
     fun render(dial: Dial, sizePx: Int, time: Calendar, opts: DialSettings = DialSettings()): Bitmap =
@@ -48,7 +57,7 @@ object DialRenderer {
         }
         c.save()
         c.scale(d.aspect, 1f, mid, mid)
-        drawMainHands(c, d, size, size * 0.385f, time, opts)
+        drawMainHands(c, d, size, size * FACE_R_FRAC, time, opts)
         c.restore()
         if (opts.strap) c.restore()
     }
@@ -78,11 +87,11 @@ object DialRenderer {
         hasLiveHands(dial) || needsFullSecondRender(dial, opts)
 
     /** Dials whose seconds cannot be drawn by the cached-face trick and
-     * need a full re-render every second: Slats (rings), Hybrids (pulse
-     * + mini-analog second hand), digital styles with seconds on (":SS"
+     * need a full re-render every second: Slats (rings), Klokers (rings),
+     * Hybrids (pulse + mini-analog second hand), digital styles with seconds on (":SS"
      * suffix). Analog kinds use the cached face + drawHandsOnto path. */
     fun needsFullSecondRender(dial: Dial, opts: DialSettings = DialSettings()): Boolean =
-        dial.kind == DialKind.SLATS || dial.kind == DialKind.HYBRID ||
+        dial.kind == DialKind.SLATS || dial.kind == DialKind.KLOKERS || dial.kind == DialKind.HYBRID ||
         (dial.kind == DialKind.DIGITAL_STYLE && opts.secondHand)
 
     /** Face alpha actually drawn: a solid face is fully opaque, so the
@@ -103,6 +112,20 @@ object DialRenderer {
     fun contrastRatio(l1: Float, l2: Float): Float {
         val (hi, lo) = if (l1 > l2) l1 to l2 else l2 to l1
         return (hi + 0.05f) / (lo + 0.05f)
+    }
+
+    /** Typeface at a Studio weight (0 = Thin, 1 = Bold). weight01 maps to
+     * a 100..900 font weight on API 28+; below that, bold kicks in past 0.6.
+     * Pass italic through so slanted styles keep their slant. */
+    fun weightedTypeface(family: String, weight01: Float, italic: Boolean): Typeface {
+        val w = (100 + weight01.coerceIn(0f, 1f) * 800).toInt().coerceIn(100, 900)
+        val base = Typeface.create(family, Typeface.NORMAL)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // The weight overload takes a Typeface, not a family name.
+            Typeface.create(base, w, italic)
+        } else {
+            Typeface.create(base, if (w >= 600) Typeface.BOLD else Typeface.NORMAL)
+        }
     }
 
     /**
@@ -183,7 +206,7 @@ object DialRenderer {
         c.scale(d.aspect, 1f, mid, mid)          // oval cases: squeeze the watch sideways
         if (opts.shadow) drawDropShadow(c, d, sizePx)
         drawCase(c, d, sizePx)
-        val faceR = sizePx * 0.385f
+        val faceR = sizePx * FACE_R_FRAC
         when (d.kind) {
             DialKind.ANALOG -> drawAnalog(c, d, sizePx, faceR, time, opts, includeHands)
             DialKind.DIGITAL -> drawDigital(c, d, sizePx, faceR, time, opts)
@@ -200,6 +223,7 @@ object DialRenderer {
             DialKind.DIGITAL_STYLE -> DigitalDials.draw(c, d, sizePx, faceR, time, opts)
             DialKind.HYBRID -> HybridDials.draw(c, d, sizePx, faceR, time, opts)
             DialKind.SLATS -> {} // handled by the early return above
+            DialKind.KLOKERS -> drawKlokers(c, d, sizePx, faceR, time, opts)
         }
         drawInnerShadow(c, d, sizePx, faceR)
         DialRealism.drawGrain(c, facePath(d, sizePx, faceR), sizePx)
@@ -258,9 +282,9 @@ object DialRenderer {
         c.save()
         c.translate(size * 0.015f, size * 0.02f)
         if (dial.squircle) {
-            c.drawRoundRect(RectF(size * 0.03f, size * 0.03f, size * 0.97f, size * 0.97f), size * 0.10f, size * 0.10f, shadow)
+            c.drawRoundRect(RectF(size * 0.06f, size * 0.06f, size * 0.94f, size * 0.94f), size * 0.10f, size * 0.10f, shadow)
         } else {
-            c.drawCircle(size / 2f, size / 2f, size * 0.455f, shadow)
+            c.drawCircle(size / 2f, size / 2f, size * CASE_R_FRAC, shadow)
         }
         c.restore()
     }
@@ -404,10 +428,10 @@ object DialRenderer {
         c.save()
         if (dial.squircle) {
             c.clipPath(Path().apply {
-                addRoundRect(RectF(size * 0.03f, size * 0.03f, size * 0.97f, size * 0.97f), size * 0.10f, size * 0.10f, Path.Direction.CW)
+                addRoundRect(RectF(size * 0.06f, size * 0.06f, size * 0.94f, size * 0.94f), size * 0.10f, size * 0.10f, Path.Direction.CW)
             })
         } else {
-            c.clipPath(Path().apply { addCircle(cx, cy, size * 0.455f, Path.Direction.CW) })
+            c.clipPath(Path().apply { addCircle(cx, cy, size * CASE_R_FRAC, Path.Direction.CW) })
         }
         // Diagonal sheen across the whole watch
         c.save()
@@ -438,7 +462,7 @@ object DialRenderer {
     private fun drawCase(c: Canvas, dial: Dial, size: Int) {
         val cx = size / 2f
         val cy = size / 2f
-        val caseR = size * 0.455f
+        val caseR = size * CASE_R_FRAC
         val gold = dial.kind == DialKind.DIGITAL || dial.kind == DialKind.DUAL
         val orange = dial.kind == DialKind.BIG_HOUR
         val dark = dial.kind == DialKind.WORD_EN || dial.kind == DialKind.WORD_ES ||
@@ -466,19 +490,15 @@ object DialRenderer {
             style = Paint.Style.STROKE
             strokeWidth = size / 700f
         }
-        val lugPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (gold) 0xFF8A6D1B.toInt() else if (orange) 0xFFE65100.toInt() else if (dark) 0xFF1C1C1F.toInt() else 0xFF8A8A8A.toInt()
-        }
-        val faceR = size * 0.385f
-        DialRealism.drawLugs(c, size, lugPaint.color)
+        val faceR = size * FACE_R_FRAC
         if (dial.squircle) {
-            val caseRect = RectF(size * 0.03f, size * 0.03f, size * 0.97f, size * 0.97f)
+            val caseRect = RectF(size * 0.06f, size * 0.06f, size * 0.94f, size * 0.94f)
             c.drawRoundRect(caseRect, size * 0.10f, size * 0.10f, metal)
             // Brushed metal: fine concentric lines over the bezel
-            var binset = size * 0.03f
+            var binset = size * 0.06f
             var bi = 0
-            while (binset < size * 0.10f) {
-                val corner = maxOf(size * 0.10f - (binset - size * 0.03f), size * 0.02f)
+            while (binset < size * 0.095f) {
+                val corner = maxOf(size * 0.10f - (binset - size * 0.06f), size * 0.02f)
                 c.drawRoundRect(RectF(binset, binset, size - binset, size - binset), corner, corner, if (bi % 2 == 0) brushLight else brushDark)
                 binset += size / 160f
                 bi++
@@ -489,8 +509,8 @@ object DialRenderer {
                 style = Paint.Style.STROKE
                 strokeWidth = size / 220f
             }
-            val edgeRect = RectF(size * 0.045f, size * 0.045f, size * 0.955f, size * 0.955f)
-            c.drawRoundRect(edgeRect, size * 0.09f, size * 0.09f, edge)
+            val edgeRect = RectF(size * 0.075f, size * 0.075f, size * 0.925f, size * 0.925f)
+            c.drawRoundRect(edgeRect, size * 0.085f, size * 0.085f, edge)
         } else {
             c.drawCircle(cx, cy, caseR, metal)
             // Brushed metal: fine concentric circles over the bezel ring
@@ -523,7 +543,7 @@ object DialRenderer {
             color = if (gold) 0xFFB8860B.toInt() else 0xFF777777.toInt()
         }
         c.drawRoundRect(
-            RectF(size * 0.955f, cy - size * 0.028f, size * 0.995f, cy + size * 0.028f),
+            RectF(size * 0.94f, cy - size * 0.028f, size * 0.98f, cy + size * 0.028f),
             size * 0.012f, size * 0.012f, crown
         )
     }
@@ -576,6 +596,164 @@ object DialRenderer {
     private val ROMAN = arrayOf("XII", "I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI")
     private val KANJI = arrayOf("子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥")
     private val FRENCH = arrayOf("DOUZE", "UNE", "DEUX", "TROIS", "QUATRE", "CINQ", "SIX", "SEPT", "HUIT", "NEUF", "DIX", "ONZE")
+
+    /**
+     * Klokers KLOK-01 (v3.4, "Featured"; v3.5 details): the slide-rule
+     * watch from the photo — white face, black Arabic hours on a disc that
+     * turns so the current hour sits under the fixed orange marker at 12,
+     * a 00/05/10…/55 minute scale on a second disc that turns the same
+     * way, an inner SECOND ring with fine ticks and a vertical SECOND
+     * label, an orange centre disc, and an orange cross on the second
+     * ring that turns with the seconds. No hands, no date window — the
+     * discs ARE the time. The numerals are printed on the discs, so each
+     * one is drawn rotated tangentially, exactly like the photo.
+     *
+     * The orange is a fixed constant, NOT dial.accent: a saved Studio
+     * accent override (black, on his phone) was recolouring the disc,
+     * cross, marker and 30°/HOUR black, so the v3.4 widget came out
+     * with a black centre. The orange is the watch's identity — it
+     * stays orange. Face/hands still honour the Studio overrides.
+     */
+    private fun drawKlokers(c: Canvas, dial: Dial, size: Int, r: Float, time: Calendar, opts: DialSettings = DialSettings()) {
+        val cx = size / 2f
+        val cy = size / 2f
+        val orange = 0xFFE8590C.toInt()
+
+        // Face
+        c.drawCircle(cx, cy, r, paint(dial.face))
+        val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(60, 0, 0, 0)
+            style = Paint.Style.STROKE
+            strokeWidth = size / 200f
+        }
+        c.drawCircle(cx, cy, r, rim)
+
+        val minute = time.get(Calendar.MINUTE)
+        val second = time.get(Calendar.SECOND)
+        val hourAngle = ((time.get(Calendar.HOUR) % 12) + minute / 60f) * 30f
+        val minuteAngle = (minute + second / 60f) * 6f
+
+        c.save()
+        c.clipPath(Path().apply { addCircle(cx, cy, r, Path.Direction.CW) })
+
+        // Hour disc: black Arabic numerals, each rotated with the disc.
+        val hourPaint = paint(dial.hands, r * 0.16f, bold = true)
+        c.save()
+        c.rotate(-hourAngle, cx, cy)
+        for (i in 0 until 12) {
+            val v = if (i == 0) 12 else i
+            c.save()
+            c.rotate(i * 30f, cx, cy)
+            drawRaisedText(c, v.toString(), cx, cy - r * 0.805f + hourPaint.textSize * 0.35f, hourPaint, size, false)
+            c.restore()
+        }
+        c.restore()
+
+        // Minute disc: ticks + a number every 5 minutes (00 05 10 … 55),
+        // rotating so the current minute is at the top — like the original.
+        val tickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(160, 0, 0, 0)
+            strokeWidth = size / 240f
+            strokeCap = Paint.Cap.ROUND
+        }
+        val minPaint = paint(dial.hands, r * 0.072f)
+        c.save()
+        c.rotate(-minuteAngle, cx, cy)
+        for (m in 0 until 60) {
+            val long = m % 5 == 0
+            val (x1, y1) = point(cx, cy, r * (if (long) 0.60f else 0.63f), m * 6.0)
+            val (x2, y2) = point(cx, cy, r * 0.66f, m * 6.0)
+            c.drawLine(x1, y1, x2, y2, tickPaint)
+        }
+        for (m in 0 until 60 step 5) {
+            c.save()
+            c.rotate(m * 6f, cx, cy)
+            drawRaisedText(c, "%02d".format(m), cx, cy - r * 0.56f + minPaint.textSize * 0.35f, minPaint, size, false)
+            c.restore()
+        }
+        c.restore()
+
+        // Inner SECOND ring: fine ticks between two thin rings, SECOND
+        // written vertically on the left, orange cross turning with the seconds.
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(90, 0, 0, 0)
+            style = Paint.Style.STROKE
+            strokeWidth = size / 300f
+        }
+        c.drawCircle(cx, cy, r * 0.38f, ringPaint)
+        c.drawCircle(cx, cy, r * 0.30f, ringPaint)
+        val secTickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(130, 0, 0, 0)
+            strokeWidth = size / 320f
+            strokeCap = Paint.Cap.ROUND
+        }
+        for (s in 0 until 60) {
+            val long = s % 5 == 0
+            val (x1, y1) = point(cx, cy, r * (if (long) 0.30f else 0.32f), s * 6.0)
+            val (x2, y2) = point(cx, cy, r * 0.38f, s * 6.0)
+            c.drawLine(x1, y1, x2, y2, secTickPaint)
+        }
+        val secondPaint = paint(Color.argb(170, 0, 0, 0), r * 0.045f, bold = true)
+        c.save()
+        c.rotate(-90f, cx - r * 0.27f, cy)
+        drawRaisedText(c, "SECOND", cx - r * 0.27f, cy + secondPaint.textSize * 0.35f, secondPaint, size, false)
+        c.restore()
+        if (opts.secondHand) {
+            val secPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = orange
+                strokeWidth = size / 160f
+                strokeCap = Paint.Cap.ROUND
+            }
+            val (sx, sy) = point(cx, cy, r * 0.38f, second * 6.0)
+            val arm = size / 55f
+            c.drawLine(sx - arm, sy, sx + arm, sy, secPaint)
+            c.drawLine(sx, sy - arm, sx, sy + arm, secPaint)
+        }
+
+        // Brand + Swiss Made (gated on the brand setting, like the other dials).
+        if (opts.brand) {
+            val brandPaint = paint(dial.hands, r * 0.095f, bold = true)
+            drawRaisedText(c, "klokers", cx, cy - r * 0.26f + brandPaint.textSize * 0.35f, brandPaint, size, false)
+            // Left, just above centre: clear of the passing hour numerals
+            // (their glyphs span cy ± 0.08r) and of the minute ticks.
+            val smallPaint = paint(Color.argb(200, 0, 0, 0), r * 0.048f)
+            drawRaisedText(c, "SWISS MADE", cx - r * 0.70f, cy - r * 0.14f + smallPaint.textSize * 0.35f, smallPaint, size, false)
+            // Orange "30°/HOUR" on the right, reading bottom to top, with
+            // the small orange triangle marker above it at 3 o'clock.
+            val sidePaint = paint(orange, r * 0.05f, bold = true)
+            c.save()
+            c.rotate(-90f, cx + r * 0.70f, cy + r * 0.20f)
+            drawRaisedText(c, "30°/HOUR", cx + r * 0.70f, cy + r * 0.20f + sidePaint.textSize * 0.35f, sidePaint, size, false)
+            c.restore()
+            val triPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = orange }
+            val tri = Path().apply {
+                moveTo(cx + r * 0.745f, cy - r * 0.025f)
+                lineTo(cx + r * 0.745f, cy + r * 0.025f)
+                lineTo(cx + r * 0.695f, cy)
+                close()
+            }
+            c.drawPath(tri, triPaint)
+        }
+
+        // Fixed orange marker at 12 — the reference the discs turn under.
+        val markPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = orange
+            strokeWidth = size / 120f
+            strokeCap = Paint.Cap.ROUND
+        }
+        c.drawLine(cx, cy - r * 0.99f, cx, cy - r * 0.90f, markPaint)
+
+        // Orange centre disc, flat matte like the original, with a thin ring.
+        val discRing = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = orange
+            style = Paint.Style.STROKE
+            strokeWidth = size / 160f
+        }
+        c.drawCircle(cx, cy, r * 0.175f, discRing)
+        c.drawCircle(cx, cy, r * 0.145f, paint(orange))
+
+        c.restore()
+    }
 
     private fun drawAnalog(c: Canvas, dial: Dial, size: Int, r: Float, time: Calendar, opts: DialSettings = DialSettings(), includeHands: Boolean = true) {
         val cx = size / 2f

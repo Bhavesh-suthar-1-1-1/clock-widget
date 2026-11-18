@@ -102,7 +102,7 @@ private enum class GalleryFilter(val label: String) {
 
 /** Gallery section of a dial: featured clock, analog watches, digital clocks, hybrids, word clocks. */
 private fun sectionOf(dial: Dial): String = when (dial.kind) {
-    DialKind.SLATS -> "Featured"
+    DialKind.SLATS, DialKind.KLOKERS -> "Featured"
     DialKind.DIGITAL_STYLE -> "Digital"
     DialKind.HYBRID -> "Hybrid"
     DialKind.WORD_EN, DialKind.WORD_ES -> "Word"

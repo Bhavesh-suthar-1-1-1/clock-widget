@@ -3,7 +3,7 @@ package com.app.dialclock
 import android.content.Context
 import android.content.SharedPreferences
 
-enum class DialKind { ANALOG, DIGITAL, WORD_EN, WORD_ES, WIDE, BIG_DIGITAL, DAY, MOON, FRENCH_OVAL, BIG_HOUR, SEMPER, DUAL, DIGITAL_STYLE, HYBRID, SLATS }
+enum class DialKind { ANALOG, DIGITAL, WORD_EN, WORD_ES, WIDE, BIG_DIGITAL, DAY, MOON, FRENCH_OVAL, BIG_HOUR, SEMPER, DUAL, DIGITAL_STYLE, HYBRID, SLATS, KLOKERS }
 enum class Numerals { ARABIC, ROMAN, DOTS, FRENCH, KANJI, NONE }
 
 /** One watch dial. Colors are ARGB ints. dateAt: 3 or 6 o'clock, 0 = no date window. */
@@ -28,7 +28,6 @@ object Dials {
     val BUILT_IN: List<Dial> = listOf(
         Dial("french", "Française", DialKind.ANALOG, 0xFFF2EAD8.toInt(), 0xFFB3261E.toInt(), 0xFFB3261E.toInt(), Numerals.FRENCH, 3),
         Dial("kanji", "Kanji", DialKind.ANALOG, 0xFFFFFFFF.toInt(), 0xFF111111.toInt(), 0xFF111111.toInt(), Numerals.KANJI, 6),
-        Dial("digital", "Seiko Gold", DialKind.DIGITAL, 0xFFC9A227.toInt(), 0xFF1A1A1A.toInt(), 0xFF8A6D1B.toInt(), Numerals.NONE, 0, squircle = true),
         Dial("h24", "24 Hour", DialKind.ANALOG, 0xFFFFFFFF.toInt(), 0xFF111111.toInt(), 0xFF111111.toInt(), Numerals.ARABIC, 3, hours24 = true),
         Dial("word_en", "Word · EN", DialKind.WORD_EN, 0xFF141414.toInt(), 0xFFF5F5F5.toInt(), 0xFFC9A86A.toInt(), Numerals.NONE, 0, squircle = true),
         Dial("word_es", "Word · ES", DialKind.WORD_ES, 0xFF141414.toInt(), 0xFFF5F5F5.toInt(), 0xFFC9A86A.toInt(), Numerals.NONE, 0, squircle = true),
@@ -45,7 +44,11 @@ object Dials {
         Dial("day", "Day", DialKind.DAY, 0xFF101010.toInt(), 0xFFFFFFFF.toInt(), 0xFFC9A86A.toInt(), Numerals.NONE, 0, squircle = true),
         // Red slat wall clock: round, red rim, white face, rotating number rings
         // behind vertical red slats, digital time in a capsule window.
-        Dial("slats", "Slats", DialKind.SLATS, 0xFFFFFFFF.toInt(), 0xFF111111.toInt(), 0xFFD32F2F.toInt(), Numerals.NONE, 0, squircle = false)
+        Dial("slats", "Slats", DialKind.SLATS, 0xFFFFFFFF.toInt(), 0xFF111111.toInt(), 0xFFD32F2F.toInt(), Numerals.NONE, 0, squircle = false),
+        // Klokers KLOK-01 (v3.4, "Featured"): white slide-rule face, black
+        // Arabic hours and 00/15/30/45 minute scale on discs that rotate
+        // with the time, orange centre disc, fixed orange marker at 12.
+        Dial("klokers", "Klokers", DialKind.KLOKERS, 0xFFFFFFFF.toInt(), 0xFF111111.toInt(), 0xFFE8590C.toInt(), Numerals.ARABIC, 0)
     ) + DigitalDials.STYLES.map { s ->
         Dial(s.id, s.name, DialKind.DIGITAL_STYLE, s.bg, s.fg, s.accent, Numerals.NONE, 0, squircle = true, style = s.id)
     } + HybridDials.STYLES.map { s ->
@@ -57,6 +60,9 @@ object Dials {
 
     fun all(customs: List<Dial>): List<Dial> = BUILT_IN + customs
 }
+
+/** Digital time arrangement: one row ("05:16") or stacked hours over minutes. */
+enum class DigitalLayout { ONE_ROW, STACKED }
 
 /** Render options the user can switch on/off in Settings. Defaults = the look v1.3 shipped with. */
 data class DialSettings(
@@ -86,7 +92,18 @@ data class DialSettings(
     // on, as picked in the Studio (default dark = his flower photo).
     // The renderer blends the translucent face over this to decide the
     // text colour — it is what makes preview and widget agree.
-    val backgroundLum: Float = 0.12f
+    val backgroundLum: Float = 0.12f,
+    // v3.8 Studio customisation for the kept digital + hybrid.
+    // fontWeight null = the style's own weight (bold styles stay bold).
+    val fontWeight: Float? = null, // 0..1, Thin -> Bold
+    val digitalLayout: DigitalLayout = DigitalLayout.ONE_ROW,
+    val showColon: Boolean = true,
+    val digitalScale: Float = 1f, // digital text size multiplier, 0.7..1.3
+    // Hybrid: null layout = the style's own arrangement; scales multiply
+    // the style's own analog/digital sizes.
+    val hybridLayout: String? = null, // "SQUARE" / "WIDE" / "TALL"
+    val hybridAnalogScale: Float = 1f,
+    val hybridDigitalScale: Float = 1f
 )
 
 object DialPrefs {
@@ -121,6 +138,14 @@ object DialPrefs {
     const val KEY_SOLID_FACE = "solid_face"         // Boolean
     const val KEY_BG_LUM = "bg_lum"                 // Float 0..1, wallpaper luminance
     const val KEY_WALLPAPER = "studio_wallpaper"    // StudioWallpaper name
+    // v3.8 Studio customisation (kept digital + hybrid).
+    const val KEY_STUDIO_WEIGHT = "studio_weight"   // Float 0..1, -1 = style's own
+    const val KEY_DIGITAL_LAYOUT = "digital_layout" // "ONE_ROW" / "STACKED"
+    const val KEY_SHOW_COLON = "show_colon"         // Boolean
+    const val KEY_DIGITAL_SCALE = "digital_scale"   // Float 0.7..1.3
+    const val KEY_HYB_LAYOUT = "hyb_layout"         // "" = style's own, else SQUARE/WIDE/TALL
+    const val KEY_HYB_ANALOG_SCALE = "hyb_analog_scale"   // Float 0.7..1.3
+    const val KEY_HYB_DIGITAL_SCALE = "hyb_digital_scale" // Float 0.7..1.3
 
     /** All render settings in one read, for the widget and the previews. */
     fun settings(ctx: Context): DialSettings {
@@ -143,7 +168,15 @@ object DialPrefs {
             fontFamily = p.getString(KEY_STUDIO_FONT, "")?.takeIf { it.isNotEmpty() },
             glassOpacity = p.getFloat(KEY_STUDIO_OPACITY, 0.6f).coerceIn(0.3f, 1f),
             solidFace = p.getBoolean(KEY_SOLID_FACE, false),
-            backgroundLum = p.getFloat(KEY_BG_LUM, 0.12f).coerceIn(0f, 1f)
+            backgroundLum = p.getFloat(KEY_BG_LUM, 0.12f).coerceIn(0f, 1f),
+            fontWeight = p.getFloat(KEY_STUDIO_WEIGHT, -1f).takeIf { it >= 0f }?.coerceIn(0f, 1f),
+            digitalLayout = try { DigitalLayout.valueOf(p.getString(KEY_DIGITAL_LAYOUT, "ONE_ROW") ?: "ONE_ROW") }
+                    catch (e: Exception) { DigitalLayout.ONE_ROW },
+            showColon = p.getBoolean(KEY_SHOW_COLON, true),
+            digitalScale = p.getFloat(KEY_DIGITAL_SCALE, 1f).coerceIn(0.7f, 1.3f),
+            hybridLayout = p.getString(KEY_HYB_LAYOUT, "")?.takeIf { it.isNotEmpty() },
+            hybridAnalogScale = p.getFloat(KEY_HYB_ANALOG_SCALE, 1f).coerceIn(0.7f, 1.3f),
+            hybridDigitalScale = p.getFloat(KEY_HYB_DIGITAL_SCALE, 1f).coerceIn(0.7f, 1.3f)
         )
     }
 
@@ -175,8 +208,20 @@ object DialPrefs {
     fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    fun selectedId(ctx: Context): String =
-        prefs(ctx).getString(KEY_SELECTED, "french") ?: "french"
+    fun selectedId(ctx: Context): String {
+        val id = prefs(ctx).getString(KEY_SELECTED, "french") ?: "french"
+        // v3.8: all digital styles but dig12 and all hybrids but hyb01
+        // were removed, and the classic Seiko Gold digital with them. A
+        // phone that had one of those selected opens on the kept digital
+        // instead. Customs are checked first, so a custom dial whose id
+        // happens to start with "dig" is never redirected.
+        if (Dials.byId(id, customs(ctx)) != null) return id
+        return when {
+            id == "digital" || id.startsWith("dig") -> "dig12"
+            id.startsWith("hyb") -> "hyb01"
+            else -> id
+        }
+    }
 
     fun select(ctx: Context, id: String) {
         val p = prefs(ctx)

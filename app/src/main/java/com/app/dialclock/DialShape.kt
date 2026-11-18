@@ -81,7 +81,7 @@ package com.app.dialclock
  *         c.scale(d.aspect, 1f, mid, mid)          // oval cases: squeeze the watch sideways
  *         if (opts.shadow) drawDropShadow(c, d, sizePx)
  *         drawCase(c, d, sizePx)
- *         val faceR = sizePx * 0.385f
+ *         val faceR = sizePx * 0.405f  // v3.5 slim body
  *         when (d.kind) {
  *             DialKind.ANALOG -> drawAnalog(c, d, sizePx, faceR, time, opts)
  *             DialKind.DIGITAL -> drawDigital(c, d, sizePx, faceR, time, opts)

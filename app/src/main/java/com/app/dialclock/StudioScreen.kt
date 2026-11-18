@@ -5,14 +5,19 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,8 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.util.Calendar
+import kotlin.math.atan2
 import kotlin.math.pow
 
 private val StudioGold = Ui.Gold
@@ -83,6 +92,13 @@ private data class StudioDraft(
     val glassOpacity: Float = 0.6f,
     val solidFace: Boolean = false,
     val font: String? = null, // null = the dial's own typeface
+    val weight: Float? = null, // null = the dial's own weight (bold stays bold)
+    val digitalLayout: DigitalLayout = DigitalLayout.ONE_ROW,
+    val showColon: Boolean = true,
+    val digitalScale: Float = 1f, // digital text size, 0.7..1.3
+    val hybridLayout: String? = null, // null = the style's own arrangement
+    val hybridAnalogScale: Float = 1f,
+    val hybridDigitalScale: Float = 1f,
     val showDate: Boolean = true,
     val showSeconds: Boolean = true,
     val hour24: Boolean = true,
@@ -99,6 +115,13 @@ private data class StudioDraft(
         handsColor = handsColor,
         accentColor = accentColor,
         fontFamily = font,
+        fontWeight = weight,
+        digitalLayout = digitalLayout,
+        showColon = showColon,
+        digitalScale = digitalScale,
+        hybridLayout = hybridLayout,
+        hybridAnalogScale = hybridAnalogScale,
+        hybridDigitalScale = hybridDigitalScale,
         glass = glass,
         glassOpacity = glassOpacity,
         solidFace = solidFace,
@@ -123,6 +146,13 @@ private fun loadDraft(ctx: Context): StudioDraft {
         glassOpacity = s.glassOpacity,
         solidFace = s.solidFace,
         font = s.fontFamily,
+        weight = s.fontWeight,
+        digitalLayout = s.digitalLayout,
+        showColon = s.showColon,
+        digitalScale = s.digitalScale,
+        hybridLayout = s.hybridLayout,
+        hybridAnalogScale = s.hybridAnalogScale,
+        hybridDigitalScale = s.hybridDigitalScale,
         showDate = s.dateWindow,
         showSeconds = s.secondHand,
         hour24 = s.hour24,
@@ -138,6 +168,13 @@ private fun applyDraft(ctx: Context, draft: StudioDraft) {
         .putLong(DialPrefs.KEY_STUDIO_HANDS, DialPrefs.colorToStore(draft.handsColor))
         .putLong(DialPrefs.KEY_STUDIO_ACCENT, DialPrefs.colorToStore(draft.accentColor))
         .putString(DialPrefs.KEY_STUDIO_FONT, draft.font ?: "")
+        .putFloat(DialPrefs.KEY_STUDIO_WEIGHT, draft.weight ?: -1f)
+        .putString(DialPrefs.KEY_DIGITAL_LAYOUT, draft.digitalLayout.name)
+        .putBoolean(DialPrefs.KEY_SHOW_COLON, draft.showColon)
+        .putFloat(DialPrefs.KEY_DIGITAL_SCALE, draft.digitalScale)
+        .putString(DialPrefs.KEY_HYB_LAYOUT, draft.hybridLayout ?: "")
+        .putFloat(DialPrefs.KEY_HYB_ANALOG_SCALE, draft.hybridAnalogScale)
+        .putFloat(DialPrefs.KEY_HYB_DIGITAL_SCALE, draft.hybridDigitalScale)
         .putFloat(DialPrefs.KEY_STUDIO_OPACITY, draft.glassOpacity)
         .putFloat(DialPrefs.KEY_BG_LUM, draft.backgroundLum)
         .putBoolean(DialPrefs.KEY_SOLID_FACE, draft.solidFace)
@@ -178,8 +215,14 @@ private fun canGlass(dial: Dial): Boolean = dial.kind != DialKind.SLATS
 private fun canGlassOpacity(dial: Dial): Boolean =
     dial.kind == DialKind.DIGITAL_STYLE || dial.kind == DialKind.HYBRID
 
-/** Typeface override: only the digital styles read fontFamily. */
-private fun canFont(dial: Dial): Boolean = dial.kind == DialKind.DIGITAL_STYLE
+/** Typeface override: the digital style and the hybrid both draw their
+ * time in the chosen family. */
+private fun canFont(dial: Dial): Boolean =
+    dial.kind == DialKind.DIGITAL_STYLE || dial.kind == DialKind.HYBRID
+
+/** Layout / position / size: only the kept digital and hybrid have them. */
+private fun canDigitalLayout(dial: Dial): Boolean = dial.kind == DialKind.DIGITAL_STYLE
+private fun canHybridLayout(dial: Dial): Boolean = dial.kind == DialKind.HYBRID
 
 /** Date: analog dials with a date window, digital styles that draw a
  * date line, and hybrids (date chip) — all gated on the date setting. */
@@ -283,7 +326,7 @@ private enum class StudioType(val label: String) {
 private fun dialsForType(type: StudioType, customs: List<Dial>): List<Dial> = when (type) {
     StudioType.DIGITAL -> DigitalDials.STYLES.mapNotNull { s -> Dials.byId(s.id, customs) } +
         listOfNotNull(Dials.byId("word_en", customs), Dials.byId("word_es", customs), Dials.byId("digital", customs))
-    StudioType.ANALOG -> listOf("kanji", "h24", "minimal", "neon", "moon", "bighour", "dual")
+    StudioType.ANALOG -> listOf("kanji", "h24", "minimal", "neon", "moon", "bighour", "dual", "klokers")
         .mapNotNull { Dials.byId(it, customs) }
     StudioType.HYBRID -> HybridDials.STYLES.mapNotNull { s -> Dials.byId(s.id, customs) }
     StudioType.CLASSY -> listOf("day", "wide", "bigdigital", "semper", "french", "frenchoval", "roman")
@@ -306,7 +349,6 @@ private data class StudioPreset(val name: String, val dialId: String)
 
 private val STUDIO_PRESETS = listOf(
     StudioPreset("Midnight", "dig12"),
-    StudioPreset("Sunset", "dig14"),
     StudioPreset("Minimal", "minimal"),
     StudioPreset("Slats", "slats")
 )
@@ -316,6 +358,9 @@ private val STUDIO_PRESETS = listOf(
 private val SWATCHES = listOf(
     "White" to 0xFFFFFFFF.toInt(),
     "Black" to 0xFF111111.toInt(),
+    "Warm white" to 0xFFF5EFE6.toInt(),
+    "Cool white" to 0xFFF0F4FF.toInt(),
+    "Sand" to 0xFFE6D3A3.toInt(),
     "Red" to 0xFFD32F2F.toInt(),
     "Gold" to 0xFFC9A227.toInt(),
     "Orange" to 0xFFFF7A00.toInt(),
@@ -326,11 +371,21 @@ private val SWATCHES = listOf(
     "Purple" to 0xFF7C4DFF.toInt()
 )
 
+// v3.8: ten font families, plus the dial's own. These are the Android
+// system families — every one of them is already used by a dial in the
+// app, so they all render on any phone.
 private val FONT_CHOICES = listOf(
     "Dial's own" to null,
     "Sans" to "sans-serif",
+    "Sans Light" to "sans-serif-light",
+    "Sans Thin" to "sans-serif-thin",
+    "Sans Medium" to "sans-serif-medium",
+    "Sans Black" to "sans-serif-black",
+    "Sans Condensed" to "sans-serif-condensed",
     "Serif" to "serif",
-    "Mono" to "monospace"
+    "Mono" to "monospace",
+    "Cursive" to "cursive",
+    "Casual" to "casual"
 )
 
 private enum class StudioTab(val label: String) {
@@ -345,6 +400,14 @@ fun StudioScreen(onBack: () -> Unit) {
     var draft by remember { mutableStateOf(loadDraft(ctx)) }
     var applied by remember { mutableStateOf(false) }
     var tabSel by remember { mutableStateOf(StudioTab.DESIGN) }
+    // "From photo": pick a photo, take its strongest colour for the digits.
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            dominantColor(ctx, uri)?.let { picked ->
+                draft = draft.copy(handsColor = picked)
+            }
+        }
+    }
     val dial = Dials.byId(draft.dialId, customs) ?: Dials.BUILT_IN.first()
     val type = typeOf(dial)
 
@@ -464,7 +527,11 @@ fun StudioScreen(onBack: () -> Unit) {
                         draft = draft.copy(
                             dialId = preset.dialId,
                             faceColor = null, handsColor = null, accentColor = null,
-                            font = null, glass = true, glassOpacity = 0.6f,
+                            font = null, weight = null,
+                            digitalLayout = DigitalLayout.ONE_ROW, showColon = true,
+                            digitalScale = 1f, hybridLayout = null,
+                            hybridAnalogScale = 1f, hybridDigitalScale = 1f,
+                            glass = true, glassOpacity = 0.6f,
                             solidFace = false,
                             showDate = true, showSeconds = true, hour24 = true,
                             shape = CaseShape.AUTO
@@ -540,6 +607,41 @@ fun StudioScreen(onBack: () -> Unit) {
                             }
                         }
                     }
+                    // Digits colour: a wheel and a photo picker, like the
+                    // reference editor's Colour tab. Both set the colour the
+                    // digits are drawn in (Hands & text).
+                    if (canColor(dial)) {
+                        Spacer(Modifier.height(22.dp))
+                        SectionLabel("Digits colour")
+                        Text(
+                            "The digits are drawn in this colour.",
+                            color = Ui.TextMid, fontSize = 12.sp
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SurfaceCard(Modifier.fillMaxWidth()) {
+                            Column {
+                                ColourWheel(
+                                    current = draft.handsColor,
+                                    onPick = { draft = draft.copy(handsColor = it) }
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    PillButton(
+                                        "From photo",
+                                        onClick = { photoPicker.launch("image/*") },
+                                        filled = false
+                                    )
+                                    if (draft.handsColor != null) {
+                                        PillButton(
+                                            "Auto",
+                                            onClick = { draft = draft.copy(handsColor = null) },
+                                            filled = false
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 StudioTab.TEXT -> {
@@ -559,6 +661,33 @@ fun StudioScreen(onBack: () -> Unit) {
                             for ((label, family) in FONT_CHOICES) {
                                 ChipPill(label, draft.font == family) { draft = draft.copy(font = family) }
                             }
+                        }
+                        Spacer(Modifier.height(20.dp))
+                        // Weight: Thin to Bold, like the reference editor.
+                        // "Dial's own" = the style's own weight (bold stays bold).
+                        SectionLabel("Weight")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Thin to bold — ${((draft.weight ?: 0.8f) * 100).toInt()}%",
+                                color = Ui.TextHi, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            ChipPill("Dial's own", draft.weight == null) { draft = draft.copy(weight = null) }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Thin", color = Ui.TextMid, fontSize = 12.sp)
+                            Slider(
+                                value = draft.weight ?: 0.8f,
+                                onValueChange = { draft = draft.copy(weight = it) },
+                                valueRange = 0f..1f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Ui.Gold,
+                                    activeTrackColor = Ui.Gold,
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                                )
+                            )
+                            Text("Bold", color = Ui.TextMid, fontSize = 12.sp)
                         }
                         Spacer(Modifier.height(20.dp))
                     }
@@ -592,6 +721,163 @@ fun StudioScreen(onBack: () -> Unit) {
                 }
 
                 StudioTab.LAYOUT -> {
+                    // Face style: Glass / Translucent / Adaptive / Normal, like
+                    // the reference editor's Style tab. Only the digital and
+                    // hybrid faces are drawn at an opacity at all.
+                    if (canGlassOpacity(dial)) {
+                        SectionLabel("Face style")
+                        Text(
+                            "How the face sits on your wallpaper.",
+                            color = Ui.TextMid, fontSize = 12.sp
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        val styleSel: String = when {
+                            draft.solidFace -> "Normal"
+                            draft.glassOpacity < 0.5f -> "Translucent"
+                            draft.faceColor == null && draft.handsColor == null && draft.accentColor == null -> "Adaptive"
+                            else -> "Glass"
+                        }
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ChipPill("Glass", styleSel == "Glass") {
+                                draft = draft.copy(solidFace = false, glassOpacity = 0.6f)
+                            }
+                            ChipPill("Translucent", styleSel == "Translucent") {
+                                draft = draft.copy(solidFace = false, glassOpacity = 0.35f)
+                            }
+                            ChipPill("Adaptive", styleSel == "Adaptive") {
+                                draft = draft.copy(
+                                    solidFace = false, glassOpacity = 0.6f,
+                                    faceColor = null, handsColor = null, accentColor = null
+                                )
+                            }
+                            ChipPill("Normal", styleSel == "Normal") {
+                                draft = draft.copy(solidFace = true, glassOpacity = 1f)
+                            }
+                        }
+                        Spacer(Modifier.height(22.dp))
+                    }
+                    // Digital layout: one row or stacked hours over minutes.
+                    if (canDigitalLayout(dial)) {
+                        SectionLabel("Layout")
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ChipPill("One row", draft.digitalLayout == DigitalLayout.ONE_ROW) {
+                                draft = draft.copy(digitalLayout = DigitalLayout.ONE_ROW)
+                            }
+                            ChipPill("Stacked", draft.digitalLayout == DigitalLayout.STACKED) {
+                                draft = draft.copy(digitalLayout = DigitalLayout.STACKED)
+                            }
+                        }
+                        Text(
+                            "Stacked puts the hours over the minutes.",
+                            color = Ui.TextMid, fontSize = 12.sp
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        SurfaceCard(Modifier.fillMaxWidth(), padding = 8.dp) {
+                            Column(Modifier.padding(horizontal = 8.dp)) {
+                                ToggleRow(
+                                    "Show colon",
+                                    "The two dots between hours and minutes",
+                                    draft.showColon
+                                ) { draft = draft.copy(showColon = it) }
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            "Time size — ${(draft.digitalScale * 100).toInt()}%",
+                            color = Ui.TextHi, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                        )
+                        Slider(
+                            value = draft.digitalScale,
+                            onValueChange = { draft = draft.copy(digitalScale = it) },
+                            valueRange = 0.7f..1.3f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Ui.Gold,
+                                activeTrackColor = Ui.Gold,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                            )
+                        )
+                        Spacer(Modifier.height(22.dp))
+                    }
+                    // Hybrid position + size: where the mini analog sits, and
+                    // how big each zone is. The arrangement IS the look.
+                    if (canHybridLayout(dial)) {
+                        SectionLabel("Position")
+                        Text(
+                            "Where the mini analog clock sits.",
+                            color = Ui.TextMid, fontSize = 12.sp
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ChipPill("Style's own", draft.hybridLayout == null) {
+                                draft = draft.copy(hybridLayout = null)
+                            }
+                            ChipPill("Analog left", draft.hybridLayout == "SQUARE") {
+                                draft = draft.copy(hybridLayout = "SQUARE")
+                            }
+                            ChipPill("Analog right", draft.hybridLayout == "WIDE") {
+                                draft = draft.copy(hybridLayout = "WIDE")
+                            }
+                            ChipPill("Analog below", draft.hybridLayout == "TALL") {
+                                draft = draft.copy(hybridLayout = "TALL")
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            "Analog size — ${(draft.hybridAnalogScale * 100).toInt()}%",
+                            color = Ui.TextHi, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                        )
+                        Slider(
+                            value = draft.hybridAnalogScale,
+                            onValueChange = { draft = draft.copy(hybridAnalogScale = it) },
+                            valueRange = 0.7f..1.3f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Ui.Gold,
+                                activeTrackColor = Ui.Gold,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                            )
+                        )
+                        Text(
+                            "Digital size — ${(draft.hybridDigitalScale * 100).toInt()}%",
+                            color = Ui.TextHi, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                        )
+                        Slider(
+                            value = draft.hybridDigitalScale,
+                            onValueChange = { draft = draft.copy(hybridDigitalScale = it) },
+                            valueRange = 0.7f..1.3f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Ui.Gold,
+                                activeTrackColor = Ui.Gold,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                            )
+                        )
+                        Spacer(Modifier.height(22.dp))
+                    }
+                    if (canDigitalLayout(dial) || canHybridLayout(dial)) {
+                        PillButton(
+                            "Reset customisation",
+                            onClick = {
+                                draft = draft.copy(
+                                    font = null, weight = null,
+                                    digitalLayout = DigitalLayout.ONE_ROW, showColon = true,
+                                    digitalScale = 1f, hybridLayout = null,
+                                    hybridAnalogScale = 1f, hybridDigitalScale = 1f,
+                                    solidFace = false, glassOpacity = 0.6f
+                                )
+                            },
+                            filled = false,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(22.dp))
+                    }
                     SectionLabel("Preview size")
                     Text(
                         "Your placed widget keeps its own size on the home screen — this only changes the preview.",
@@ -848,5 +1134,121 @@ private fun RgbSlider(label: String, value: Int, onChange: (Int) -> Unit) {
             )
         )
         Text("$value", color = Ui.TextHi, fontSize = 12.sp, modifier = Modifier.width(28.dp))
+    }
+}
+
+/** Colour wheel: drag around the hue ring to pick the digits colour.
+ * The centre dot shows the colour being picked. Brightness is a slider
+ * under the wheel. */
+@Composable
+private fun ColourWheel(current: Int?, onPick: (Int) -> Unit) {
+    val startHsv = FloatArray(3)
+    if (current != null) android.graphics.Color.colorToHSV(current, startHsv)
+    var hue by remember(current) { mutableStateOf(if (current != null) startHsv[0] else 0f) }
+    var value by remember(current) { mutableStateOf(if (current != null) startHsv[2] else 1f) }
+    val picked = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, value)))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Canvas(
+            Modifier.size(150.dp)
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            var angle = Math.toDegrees(
+                                atan2((offset.y - cy).toDouble(), (offset.x - cx).toDouble())
+                            ).toFloat()
+                            if (angle < 0) angle += 360f
+                            hue = angle
+                            onPick(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, value)))
+                        },
+                        onDrag = { change, _ ->
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            var angle = Math.toDegrees(
+                                atan2((change.position.y - cy).toDouble(), (change.position.x - cx).toDouble())
+                            ).toFloat()
+                            if (angle < 0) angle += 360f
+                            hue = angle
+                            onPick(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, value)))
+                        }
+                    )
+                }
+        ) {
+            val rainbow = listOf(
+                Color.Red, Color.Yellow, Color.Green, Color.Cyan,
+                Color.Blue, Color.Magenta, Color.Red
+            )
+            drawCircle(
+                brush = Brush.sweepGradient(rainbow, center = center),
+                radius = size.minDimension / 2f,
+                center = center
+            )
+            drawCircle(color = picked, radius = size.minDimension * 0.20f, center = center)
+            drawCircle(
+                color = Color.White.copy(alpha = 0.35f),
+                radius = size.minDimension * 0.20f,
+                center = center,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Box(
+                Modifier.size(38.dp)
+                    .clip(CircleShape)
+                    .background(picked)
+                    .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("Brightness", color = Ui.TextMid, fontSize = 12.sp)
+            Slider(
+                value = value,
+                onValueChange = {
+                    value = it
+                    onPick(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, value)))
+                },
+                valueRange = 0.25f..1f,
+                colors = SliderDefaults.colors(
+                    thumbColor = Ui.Gold,
+                    activeTrackColor = Ui.Gold,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                )
+            )
+        }
+    }
+}
+
+/** The strongest colour in a photo: downscale, bucket the saturated
+ * pixels by hue, average the biggest bucket. Greys are skipped, so a
+ * black-and-white photo returns nothing instead of grey. */
+private fun dominantColor(ctx: Context, uri: Uri): Int? {
+    return try {
+        ctx.contentResolver.openInputStream(uri)?.use { stream ->
+            val bmp = BitmapFactory.decodeStream(stream) ?: return null
+            val small = Bitmap.createScaledBitmap(bmp, 24, 24, true)
+            val buckets = mutableMapOf<Int, MutableList<Int>>()
+            for (y in 0 until 24) for (x in 0 until 24) {
+                val px = small.getPixel(x, y)
+                val hsv = FloatArray(3)
+                android.graphics.Color.colorToHSV(px, hsv)
+                if (hsv[1] < 0.35f) continue
+                val b = ((hsv[0] / 30f).toInt()).coerceIn(0, 11)
+                buckets.getOrPut(b) { mutableListOf() }.add(px)
+            }
+            val best = buckets.values.maxByOrNull { it.size } ?: return null
+            var r = 0L
+            var g = 0L
+            var b = 0L
+            for (px in best) {
+                r += android.graphics.Color.red(px)
+                g += android.graphics.Color.green(px)
+                b += android.graphics.Color.blue(px)
+            }
+            val n = best.size
+            android.graphics.Color.rgb((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
+        }
+    } catch (e: Exception) {
+        null
     }
 }

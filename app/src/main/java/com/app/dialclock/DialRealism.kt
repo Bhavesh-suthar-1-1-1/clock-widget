@@ -49,7 +49,7 @@ package com.app.dialclock
  *       // Lugs, top and bottom (no strap, just the case lugs)
  *     (the 5 lines: lugW, lugH, lugR and the two c.drawRoundRect calls).
  *     Keep the crown code below it.
- *  b) INSERT this line right after the `val faceR = size * 0.385f` line
+ *  b) INSERT this line right after the `val faceR = size * FACE_R_FRAC` line (v3.5: was 0.385f)
  *     in drawCase (so it is drawn BEFORE the case and the case covers the lug roots):
  *       DialRealism.drawLugs(c, size, lugPaint.color)
  *
@@ -289,29 +289,10 @@ object DialRealism {
         c.restore()
     }
 
-    // ---------------------------------------------------------------- lugs + strap
-
-    /** Four lugs (two top, two bottom). Draw BEFORE the case so the case covers their roots. */
-    fun drawLugs(c: Canvas, size: Int, base: Int) {
-        val cx = size / 2f
-        val cy = size / 2f
-        val w = size * 0.065f
-        val halfGap = size * 0.17f
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        for (sx in intArrayOf(-1, 1)) for (sy in intArrayOf(-1, 1)) {
-            val left = if (sx < 0) cx - halfGap - w else cx + halfGap
-            val y1 = cy + sy * size * 0.33f
-            val y2 = cy + sy * size * 0.496f
-            p.shader = LinearGradient(
-                left, 0f, left + w, 0f,
-                intArrayOf(shade(base, 1.35f), base, shade(base, 0.7f)),
-                floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP
-            )
-            c.drawRoundRect(RectF(left, min(y1, y2), left + w, max(y1, y2)), w * 0.45f, w * 0.45f, p)
-        }
-    }
+    // ---------------------------------------------------------------- strap
 
     fun strapColor(dial: Dial): Int = when {
+        dial.kind == DialKind.KLOKERS -> 0xFF6E6E6E.toInt()            // grey fabric NATO (Klokers original)
         dial.kind == DialKind.BIG_HOUR -> 0xFFEDEDED.toInt()           // white rubber
         dial.kind == DialKind.DIGITAL -> 0xFF5A3A1E.toInt()            // dark brown leather
         Color.luminance(dial.face) < 0.2f -> 0xFF222225.toInt()        // black leather
